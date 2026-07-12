@@ -1,0 +1,17 @@
+# Ambientes virtuais e Python
+venv/
+__pycache__/
+*.pyc
+
+# Variáveis de ambiente e credenciais (NUNCA versionar)
+.env
+*.env
+credentials.json
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Sistema macOS
+.DS_Store
