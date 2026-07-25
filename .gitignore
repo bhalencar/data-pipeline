@@ -15,3 +15,7 @@ dbt/logs/
 
 # Sistema macOS
 .DS_Store
+
+extraction/shopee/.token_cache.json
+
+.vscode/
