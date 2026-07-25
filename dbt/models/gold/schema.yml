@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: master_orders
+    columns:
+      - name: order_sn
+        tests:
+          - not_null
+      - name: item_id
+        tests:
+          - not_null
+      - name: item_sku
+        tests:
+          - not_null
+      - name: cmv_unitario
+        tests:
+          - not_null
+      - name: margem_item
+        tests:
+          - not_null

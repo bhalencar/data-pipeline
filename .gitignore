@@ -19,3 +19,12 @@ dbt/logs/
 extraction/shopee/.token_cache.json
 
 .vscode/
+
+data/
+
+# Arquivos temporários do Excel
+~$*
+
+# Logs de execução
+orchestration/*.log
+docker/logs/

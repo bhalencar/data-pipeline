@@ -101,6 +101,35 @@ def get_order_detail(order_sn_list: list) -> list:
 
     return all_details
 
+def get_escrow_detail(order_sn_list: list) -> list:
+    """Busca o detalhe financeiro (escrow) de cada pedido, um por vez."""
+    access_token, shop_id = get_valid_access_token()
+    path = "/api/v2/payment/get_escrow_detail"
+
+    all_escrows = []
+
+    for order_sn in order_sn_list:
+        timestamp = int(time.time())
+        sign = generate_sign(path, timestamp, access_token, shop_id)
+
+        url = (
+            f"{API_HOST}{path}"
+            f"?partner_id={PARTNER_ID}&timestamp={timestamp}&sign={sign}"
+            f"&access_token={access_token}&shop_id={shop_id}"
+            f"&order_sn={order_sn}"
+        )
+
+        response = requests.get(url)
+        data = response.json()
+
+        if data.get("error"):
+            print(f"Aviso: erro ao buscar escrow do pedido {order_sn}: {data}")
+            continue
+
+        all_escrows.append(data["response"])
+
+    return all_escrows
+
 
 if __name__ == "__main__":
     # D-1: dia de ontem inteiro, fuso de Brasília (UTC-3)
@@ -128,5 +157,15 @@ if __name__ == "__main__":
             json.dump(order_details, f, indent=2)
 
         print(f"Detalhes salvos para {len(order_details)} pedidos.")
+
+         # NOVO: busca o financeiro (escrow) dos mesmos pedidos
+        print("Buscando dados financeiros (escrow)...")
+        escrow_details = get_escrow_detail(order_sns)
+
+        os.makedirs("data/bronze/get_escrow_detail", exist_ok=True)
+        with open(f"data/bronze/get_escrow_detail/{yesterday}.json", "w") as f:
+            json.dump(escrow_details, f, indent=2)
+
+        print(f"Dados financeiros salvos para {len(escrow_details)} pedidos.")
     else:
         print("Nenhum pedido encontrado nesse período.")

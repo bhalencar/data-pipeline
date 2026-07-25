@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: stg_orders
+    columns:
+      - name: order_sn
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_order_items
+    columns:
+      - name: order_sn
+        tests:
+          - not_null
+      - name: item_sku
+        tests:
+          - not_null
+      - name: quantity_purchased
+        tests:
+          - not_null

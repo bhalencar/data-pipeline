@@ -1,0 +1,21 @@
+name: 'casa_e_patas'
+version: '1.0.0'
+config-version: 2
+
+profile: 'casa_e_patas'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  casa_e_patas:
+    silver:
+      +materialized: view
+    gold:
+      +materialized: table

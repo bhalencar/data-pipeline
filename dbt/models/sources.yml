@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: bronze
+    schema: bronze
+    tables:
+      - name: get_order_list
+      - name: get_order_detail
+      - name: get_escrow_detail
