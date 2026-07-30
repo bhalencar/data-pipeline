@@ -16,7 +16,8 @@ dbt/logs/
 # Sistema macOS
 .DS_Store
 
-extraction/shopee/.token_cache.json
+# Cache de tokens Shopee (qualquer variação: .json, .bak, por ambiente etc.)
+extraction/shopee/.token_cache*
 
 .vscode/
 

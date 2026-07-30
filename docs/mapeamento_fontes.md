@@ -102,5 +102,27 @@ Workflow de atualização:
 Migração deliberadamente adiada para a Fase 7, junto com o backfill histórico
 (Janeiro/2026 em diante, em janelas de 15 dias).
 
+## ⚠️ Manutenção recorrente — Renovação da Live API Partner Key
+
+**Data de expiração atual: 23/01/2027 12:59**
+
+A Live API Partner Key da Shopee tem validade limitada. Quando expirar, a autenticação
+para de funcionar e o pipeline falha silenciosamente (o launchd continua rodando às 6h,
+mas a extração retorna erro de autenticação).
+
+**Como renovar:** Shopee Open Platform → App Management → App List →
+app "data pipeline casa e patas" → renovar/regerar a Live API Partner Key,
+depois atualizar o valor no `.env` local.
+
+**Recomendação:** criar um lembrete no calendário para dezembro/2026,
+com ~1 mês de folga antes do vencimento.
+
+### Credenciais de produção (Go-Live aprovado em 29/07/2026)
+| Campo | Valor |
+|---|---|
+| Live Partner_id | 2039225 |
+| Test Partner_id (Sandbox, ainda ativo) | 1238362 |
+| Status do app | Online |
+
 ---
-_Última atualização: 25/07/2026_
+_Última atualização: 29/07/2026_

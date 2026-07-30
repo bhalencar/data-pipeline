@@ -10,7 +10,7 @@ load_dotenv()
 
 PARTNER_ID = int(os.getenv("SHOPEE_PARTNER_ID", "").strip())
 PARTNER_KEY = os.getenv("SHOPEE_PARTNER_KEY", "").strip()
-API_HOST = "https://openplatform.sandbox.test-stable.shopee.sg"
+API_HOST = "https://partner.shopeemobile.com"
 
 # Carrega o token salvo
 with open("extraction/shopee/.token_cache.json") as f:

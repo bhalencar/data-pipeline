@@ -12,14 +12,8 @@ load_dotenv()
 PARTNER_ID = int(os.getenv("SHOPEE_PARTNER_ID", "").strip())
 PARTNER_KEY = os.getenv("SHOPEE_PARTNER_KEY", "").strip()
 
-# --- DEBUG temporário: vamos apagar isso depois de confirmar ---
-print(f"Partner ID lido: {PARTNER_ID}")
-print(f"Partner Key lida ({len(PARTNER_KEY)} caracteres): {repr(PARTNER_KEY)}")
-print("---")
-# --- fim do debug ---
-
-# Host de testes (Sandbox) da Shopee — diferente do host de produção
-HOST = "https://partner.test-stable.shopeemobile.com"
+# Host de PRODUÇÃO da Shopee (Go-Live aprovado em 29/07/2026)
+HOST = "https://partner.shopeemobile.com"
 
 
 def generate_sign(path: str, timestamp: int) -> str:
