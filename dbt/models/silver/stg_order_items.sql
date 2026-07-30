@@ -34,6 +34,10 @@ select
     (item ->> 'model_id')::bigint as model_id,
     nullif(item ->> 'model_sku', '') as model_sku,
     nullif(item ->> 'model_name', '') as model_name,
+    coalesce(
+        nullif(item ->> 'model_sku', ''),
+        nullif(item ->> 'item_sku', '')
+    ) as sku_custo,
     (item ->> 'model_quantity_purchased')::int as quantity_purchased,
     (item ->> 'model_original_price')::numeric as preco_tabela,
     (item ->> 'model_discounted_price')::numeric as discounted_price,

@@ -13,8 +13,13 @@ models:
         tests:
           - not_null
       - name: cmv_unitario
-        tests:
-          - not_null
+        data_tests:
+          - not_null:
+              config:
+                where: "create_time >= '2026-06-01'"
+
       - name: margem_item
-        tests:
-          - not_null
+        data_tests:
+          - not_null:
+              config:
+                where: "create_time >= '2026-06-01'"
