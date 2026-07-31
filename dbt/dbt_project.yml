@@ -4,6 +4,9 @@ config-version: 2
 
 profile: 'casa_e_patas'
 
+flags:
+  send_anonymous_usage_stats: false
+
 model-paths: ["models"]
 seed-paths: ["seeds"]
 test-paths: ["tests"]
