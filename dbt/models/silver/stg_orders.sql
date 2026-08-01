@@ -13,8 +13,6 @@ deduped as (
 
 {% if target.type == 'bigquery' %}
 
-    -- BigQuery nao tem DISTINCT ON. O qualify filtra a janela direto,
-    -- sem precisar de subquery com row_number.
     select
         order_sn,
         raw_data,
@@ -44,16 +42,14 @@ select
 
 {% if target.type == 'bigquery' %}
 
-    -- raw_data e STRING no BigQuery: extracao com json_value.
-    -- create_time/pay_time vem como epoch em segundos.
-    json_value(raw_data, '$.order_status')                          as order_status,
-    timestamp_seconds(cast(json_value(raw_data, '$.create_time') as int64))  as create_time,
-    timestamp_seconds(cast(json_value(raw_data, '$.pay_time') as int64))     as pay_time,
-    json_value(raw_data, '$.payment_method')                        as payment_method,
-    json_value(raw_data, '$.buyer_username')                        as buyer_username,
-    cast(json_value(raw_data, '$.total_amount') as numeric)         as total_amount,
-    cast(json_value(raw_data, '$.actual_shipping_fee') as numeric)  as actual_shipping_fee,
-    json_value(raw_data, '$.shipping_carrier')                      as shipping_carrier,
+    json_value(raw_data, '$.order_status')                                  as order_status,
+    timestamp_seconds(cast(json_value(raw_data, '$.create_time') as int64)) as create_time,
+    timestamp_seconds(cast(json_value(raw_data, '$.pay_time') as int64))    as pay_time,
+    json_value(raw_data, '$.payment_method')                                as payment_method,
+    json_value(raw_data, '$.buyer_username')                                as buyer_username,
+    cast(json_value(raw_data, '$.total_amount') as numeric)                 as total_amount,
+    cast(json_value(raw_data, '$.actual_shipping_fee') as numeric)          as actual_shipping_fee,
+    json_value(raw_data, '$.shipping_carrier')                              as shipping_carrier,
 
 {% else %}
 

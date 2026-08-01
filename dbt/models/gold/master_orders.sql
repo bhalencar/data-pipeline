@@ -35,11 +35,28 @@ escrow as (
 ),
 
 costs as (
+
+{% if target.type == 'bigquery' %}
+
+    -- No BigQuery o seed ja chega com custo_unitario FLOAT64 e
+    -- data_vigencia_inicio DATE, mas o cast para numeric mantem a
+    -- precisao decimal igual a do Postgres nos calculos de margem.
+    select
+        sku,
+        cast(custo_unitario as numeric) as custo_unitario,
+        data_vigencia_inicio
+    from {{ ref('custo_produtos') }}
+
+{% else %}
+
     select
         sku,
         custo_unitario::numeric as custo_unitario,
         data_vigencia_inicio::date as data_vigencia_inicio
     from {{ ref('custo_produtos') }}
+
+{% endif %}
+
 ),
 
 items_orders as (
@@ -90,7 +107,12 @@ cost_matches as (
     from items_orders io
     left join costs c
         on c.sku = io.sku_custo
+        -- timestamp para data: BigQuery usa date(), Postgres usa ::date
+        {% if target.type == 'bigquery' %}
+        and c.data_vigencia_inicio <= date(io.create_time)
+        {% else %}
         and c.data_vigencia_inicio <= io.create_time::date
+        {% endif %}
 ),
 
 deduplicated as (
@@ -143,7 +165,13 @@ select
     -- receita_liquida: receita_bruta menos 6% de imposto.
     -- ATENCAO: base = repasse da Shopee, nao o GMV. Se o regime tributario exigir
     -- que a aliquota incida sobre o faturamento, trocar receita_bruta por gmv_item.
+    {% if target.type == 'bigquery' %}
+    -- cast do fator para numeric: sem isso o BigQuery promove a conta para
+    -- FLOAT64 e o arredondamento pode divergir do Postgres nos centavos.
+    round(receita_bruta * cast(0.94 as numeric), 2) as receita_liquida,
+    {% else %}
     round(receita_bruta * (1 - 0.06), 2) as receita_liquida,
+    {% endif %}
 
     -- comissao_shopee (take rate): fatia do GMV retida pela Shopee, somando
     -- comissao, taxa de servico, transacao e efeito de frete. Expressa em decimal
