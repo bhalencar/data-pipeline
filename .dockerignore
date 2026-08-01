@@ -1,0 +1,15 @@
+venv/
+data/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+docker/
+consultas/
+docs/
+extraction/planilhas/
+__pycache__/
+*.pyc
+.env
+.git/
+.gitignore
+*.log

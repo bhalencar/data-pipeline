@@ -1,0 +1,37 @@
+casa_e_patas:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev:
+      type: postgres
+      host: 127.0.0.1
+      port: 5432
+      user: casa_e_patas
+      password: pipeline2026
+      dbname: data_pipeline
+      schema: silver
+      threads: 4
+
+    # Uso local: le a chave do arquivo em ~/.gcp-keys
+    bigquery:
+      type: bigquery
+      method: service-account
+      keyfile: /Users/brunoalencar/.gcp-keys/dbt-bigquery-sa-key.json
+      project: cp-pipeline-503623
+      dataset: silver
+      location: southamerica-east1
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      job_retries: 1
+
+    # Uso no Cloud Run: sem arquivo de chave, usa a identidade do job
+    bigquery_cloud:
+      type: bigquery
+      method: oauth
+      project: cp-pipeline-503623
+      dataset: silver
+      location: southamerica-east1
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      job_retries: 1

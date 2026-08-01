@@ -36,8 +36,13 @@ SCHEMA = [
 
 
 def get_client() -> bigquery.Client:
-    creds = service_account.Credentials.from_service_account_file(str(KEYFILE))
-    return bigquery.Client(project=PROJECT_ID, credentials=creds, location=LOCATION)
+    # No Cloud Run nao existe arquivo de chave: a autenticacao vem da
+    # identidade da propria service account do job (credencial padrao).
+    # Localmente, usa o keyfile se ele existir.
+    if KEYFILE.exists():
+        creds = service_account.Credentials.from_service_account_file(str(KEYFILE))
+        return bigquery.Client(project=PROJECT_ID, credentials=creds, location=LOCATION)
+    return bigquery.Client(project=PROJECT_ID, location=LOCATION)
 
 
 def garantir_tabela(client: bigquery.Client, nome: str) -> str:

@@ -5,6 +5,7 @@ import os
 import json
 import requests
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 
@@ -14,6 +15,12 @@ API_HOST = "https://partner.shopeemobile.com"
 
 # Caminho do arquivo de cache, relativo à raiz do projeto
 TOKEN_FILE = "extraction/shopee/.token_cache.json"
+
+# Onde guardar o token: local (arquivo) ou GCS (bucket).
+# No Cloud Run o disco e efemero, entao o cache precisa viver fora do container.
+# Definir TOKEN_BUCKET no ambiente ativa o modo GCS automaticamente.
+TOKEN_BUCKET = os.getenv("TOKEN_BUCKET", "").strip()
+TOKEN_BLOB = os.getenv("TOKEN_BLOB", "token_cache.json").strip()
 
 # Margem de segurança: renovamos o token um pouco antes de expirar de verdade,
 # pra evitar erro caso a chamada demore alguns segundos
@@ -29,12 +36,27 @@ def _generate_sign(path: str, timestamp: int) -> str:
     ).hexdigest()
 
 
+def _gcs_blob():
+    """So importa a lib do GCS quando realmente for usar (modo nuvem)."""
+    from google.cloud import storage
+    client = storage.Client()
+    return client.bucket(TOKEN_BUCKET).blob(TOKEN_BLOB)
+
+
 def _load_tokens() -> dict:
+    if TOKEN_BUCKET:
+        return json.loads(_gcs_blob().download_as_text())
     with open(TOKEN_FILE) as f:
         return json.load(f)
 
 
 def _save_tokens(data: dict) -> None:
+    if TOKEN_BUCKET:
+        _gcs_blob().upload_from_string(
+            json.dumps(data, indent=2),
+            content_type="application/json",
+        )
+        return
     with open(TOKEN_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
