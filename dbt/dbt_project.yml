@@ -18,6 +18,9 @@ clean-targets:
 
 models:
   casa_e_patas:
+    +persist_docs:
+      relation: true
+      columns: true
     silver:
       +materialized: view
     gold:

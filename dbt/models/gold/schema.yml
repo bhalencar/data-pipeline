@@ -2,24 +2,134 @@ version: 2
 
 models:
   - name: master_orders
+    description: >
+      Tabela final de vendas da Casa e Patas na Shopee. Cada linha e um produto
+      dentro de um pedido: se o cliente comprou 3 itens diferentes, sao 3 linhas;
+      se comprou 2 variacoes do mesmo produto, tambem sao 2 linhas.
+      Para contar PEDIDOS use count(distinct order_sn), nunca count(*).
+      Grao: order_sn + item_id + model_id.
+
     columns:
       - name: order_sn
+        description: "Numero do pedido na Shopee, igual ao do painel do vendedor. Use count(distinct order_sn) para contar pedidos."
         tests:
           - not_null
+
       - name: item_id
+        description: "Codigo interno da Shopee para o produto pai."
         tests:
           - not_null
+
+      - name: model_id
+        description: "Codigo interno da Shopee para a variacao (cor, tamanho). Nulo em produtos sem variacao."
+
       - name: item_sku
+        description: "SKU cadastrado no nivel do produto pai. Vem vazio em produtos com variacao: prefira sku_custo."
         tests:
           - not_null
+
+      - name: sku_custo
+        description: "SKU efetivo do que foi vendido: usa model_sku quando existe, senao item_sku. E a chave para agrupar por produto e para buscar o custo."
+
+      - name: item_name
+        description: "Nome do produto como aparece no anuncio."
+
+      - name: model_name
+        description: "Nome da variacao vendida, por exemplo 'Marrom-Escuro|Potes-Preto'."
+
+      - name: order_status
+        description: >
+          Situacao do pedido: COMPLETED, SHIPPED, TO_CONFIRM_RECEIVE, CANCELLED
+          ou TO_RETURN. SEMPRE filtre por este campo em analises financeiras:
+          pedidos CANCELLED tem repasse zero e distorcem qualquer media.
+
+      - name: create_time
+        description: "Data e hora em que o pedido foi feito, em UTC (3h a frente de Sao Paulo). E a data a usar para analises por periodo."
+
+      - name: pay_time
+        description: "Data e hora do pagamento, em UTC."
+
+      - name: customer_type
+        description: "'Novo' se foi a primeira compra do cliente, 'Recorrente' se ele ja havia comprado antes."
+
+      - name: quantity_purchased
+        description: "Unidades daquele item no pedido."
+
+      - name: preco_tabela
+        description: "Preco cheio unitario, sem desconto."
+
+      - name: discounted_price
+        description: "Preco de venda POR UNIDADE, com promocoes aplicadas. Nao confundir com preco_desconto_linha, que e o total."
+
+      - name: preco_desconto_linha
+        description: "Preco de venda DA LINHA INTEIRA (preco x quantidade), vindo do relatorio financeiro da Shopee."
+
       - name: cmv_unitario
+        description: "Custo de uma unidade do produto, da planilha de custos. Nulo em pedidos anteriores a 2026-06-01 (produtos descontinuados) - isso e proposital."
         data_tests:
           - not_null:
               config:
                 where: "create_time >= '2026-06-01'"
 
+      - name: cmv_total
+        description: "Custo total da linha: cmv_unitario x quantity_purchased."
+
+      - name: receita_item
+        description: "Valor de venda da linha: discounted_price x quantity_purchased."
+
       - name: margem_item
+        description: >
+          Sobra da linha considerando SO o custo do produto (receita_item - cmv_total).
+          NAO desconta comissao da Shopee, frete, impostos nem cupons. Para resultado
+          financeiro real use receita_bruta e receita_liquida.
         data_tests:
           - not_null:
               config:
                 where: "create_time >= '2026-06-01'"
+
+      - name: cupom_vendedor
+        description: "Cupom que saiu do bolso do vendedor, ja rateado por item pela Shopee."
+
+      - name: cupom_shopee
+        description: "Cupom bancado pela Shopee. Nao reduz o faturamento do vendedor e nao entra no GMV."
+
+      - name: gmv_item
+        description: >
+          Faturamento da linha: preco de venda menos o cupom do vendedor
+          (definicao oficial Shopee 2026). INCLUI pedidos cancelados e devolvidos,
+          porque mede volume de vendas geradas e nao dinheiro recebido.
+
+      - name: receita_bruta
+        description: "Repasse efetivo da Shopee para a linha, ja rateado por item. Zero em pedidos cancelados. Use ESTE campo para somar repasse, nunca escrow_amount."
+
+      - name: receita_liquida
+        description: "receita_bruta menos 6% de imposto."
+
+      - name: comissao_shopee
+        description: >
+          Fatia do GMV retida pela Shopee, em decimal (0.3565 = 35,65%). Inclui
+          comissao, taxa de servico, transacao e efeito do frete - nao e so a
+          comissao contratual. Em pedidos cancelados marca 100%.
+          Para a taxa media de um periodo use 1 - sum(receita_bruta)/sum(gmv_item),
+          NUNCA avg(comissao_shopee), senao um pedido de R$20 pesa igual a um de R$200.
+
+      - name: commission_fee
+        description: "Comissao da Shopee em valor absoluto, isolada das demais taxas."
+
+      - name: net_commission_fee
+        description: "Comissao apos ajustes e rebates."
+
+      - name: frete_pago_comprador
+        description: "Valor de frete pago pelo comprador."
+
+      - name: frete_custo_real
+        description: "Custo real do frete. Se maior que o pago pelo comprador, a diferenca veio de subsidio da Shopee ou do vendedor."
+
+      - name: valor_pago_produto
+        description: "Valor dos produtos conforme o relatorio financeiro da Shopee."
+
+      - name: escrow_amount
+        description: >
+          Repasse do PEDIDO INTEIRO, repetido em cada linha do mesmo pedido.
+          NUNCA somar este campo: a soma fica inflada em pedidos multi-item.
+          Para somar repasse use receita_bruta. Pode ser negativo em devolucoes.
