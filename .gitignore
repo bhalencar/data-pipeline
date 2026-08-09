@@ -20,6 +20,7 @@ dbt/logs/
 extraction/shopee/.token_cache*
 
 .vscode/
+.claude/
 
 data/
 

@@ -2,6 +2,15 @@
 
 Guia de consulta rápida: o que cada coluna significa, em linguagem de negócio.
 
+> **Para quem é este arquivo.** É a versão para pessoa de negócio, com exemplos e explicação
+> do porquê. A versão de engenharia está em `dbt/models/gold/schema.yml`, e a versão que os
+> agentes consultam está na tabela `silver.dicionario_campos`, gerada de
+> `dbt/seeds/dicionario_campos.csv`.
+>
+> As três descrevem os mesmos 31 campos, para leitores diferentes. **Campo novo ou
+> descrição corrigida precisa entrar nas três** — a divergência entre elas foi o que
+> escondeu a armadilha do fuso horário até 09/08/2026.
+
 ## O que é esta tabela
 
 É a tabela final com todas as vendas da Casa e Patas na Shopee, pronta para análise.
@@ -33,8 +42,24 @@ Isso é importante na hora de contar: para saber **quantos pedidos** você teve,
 
 | Campo | O que é |
 |---|---|
-| `create_time` | Data e hora em que o pedido foi feito. **É a data que você deve usar** para análises por período. |
-| `pay_time` | Data e hora do pagamento. Costuma ser igual ou poucos minutos depois da criação. |
+| `create_time` | Data e hora em que o pedido foi feito. **É a data que você deve usar** para análises por período. Vem em **UTC**, 3 horas à frente de São Paulo — veja o aviso abaixo. |
+| `pay_time` | Data e hora do pagamento, também em UTC. Costuma ser igual ou poucos minutos depois da criação. |
+
+> **Atenção ao fuso horário.** As datas são gravadas em UTC, que está 3 horas à frente
+> de São Paulo. Um pedido feito às 22h de terça aparece como quarta-feira se você não
+> converter. Cerca de 16% dos pedidos caem em outro dia por causa disso.
+>
+> Em SQL, use `date(create_time, 'America/Sao_Paulo')` em vez de `date(create_time)`.
+> Em Looker ou planilha, confira se a ferramenta está convertendo para o horário de Brasília.
+>
+> **A referência certa é o painel da Shopee**, que mostra horário de Brasília. Verificado
+> em 09/08/2026 com o pedido `260130CHJ981HS`: o painel exibe 29/01 às 21:13, e é essa
+> a data comercial correta.
+
+> **Não tire a data do número do pedido.** Os seis primeiros dígitos do `order_sn`
+> parecem uma data — `260130...` — mas seguem o relógio de Singapura, onde fica o
+> servidor da Shopee. Nos 95 pedidos da base, todos os 95 batem com Singapura e apenas
+> 28 batem com Brasília. O pedido acima tem `260130` no número e foi feito no dia 29.
 | `order_status` | Situação atual do pedido na Shopee. Valores possíveis: `COMPLETED` (concluído), `SHIPPED` (enviado), `TO_CONFIRM_RECEIVE` (aguardando confirmação do cliente), `CANCELLED` (cancelado), `TO_RETURN` (em devolução). |
 | `customer_type` | Se foi a primeira compra daquele cliente (`Novo`) ou se ele já havia comprado antes (`Recorrente`). |
 
