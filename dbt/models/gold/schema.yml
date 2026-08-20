@@ -39,9 +39,30 @@ models:
 
       - name: order_status
         description: >
-          Situacao do pedido: COMPLETED, SHIPPED, TO_CONFIRM_RECEIVE, CANCELLED
-          ou TO_RETURN. SEMPRE filtre por este campo em analises financeiras:
-          pedidos CANCELLED tem repasse zero e distorcem qualquer media.
+          Situacao do pedido. Oito valores ja observados, do mais cru ao final:
+          UNPAID, READY_TO_SHIP, PROCESSED, SHIPPED, TO_CONFIRM_RECEIVE,
+          TO_RETURN, CANCELLED e COMPLETED.
+          SEMPRE filtre por este campo em analises financeiras: CANCELLED tem
+          repasse zero e UNPAID nunca foi pago, e os dois distorcem qualquer media.
+          O accepted_values abaixo e proposital como WARN, nao como ERROR: status
+          novo da Shopee nao e defeito do pipeline, e um aviso de que o dicionario
+          precisa de uma linha nova.
+        data_tests:
+          # dbt 1.12 exige os argumentos do teste generico aninhados em `arguments`.
+          # Sem isso o build passa, mas com aviso de deprecacao.
+          - accepted_values:
+              arguments:
+                values:
+                  - COMPLETED
+                  - SHIPPED
+                  - TO_CONFIRM_RECEIVE
+                  - CANCELLED
+                  - TO_RETURN
+                  - READY_TO_SHIP
+                  - UNPAID
+                  - PROCESSED
+              config:
+                severity: warn
 
       - name: create_time
         description: "Data e hora em que o pedido foi feito, em UTC (3h a frente de Sao Paulo). E a data a usar para analises por periodo."
@@ -98,12 +119,30 @@ models:
           Faturamento da linha: preco de venda menos o cupom do vendedor
           (definicao oficial Shopee 2026). INCLUI pedidos cancelados e devolvidos,
           porque mede volume de vendas geradas e nao dinheiro recebido.
+          Fica NULO enquanto a Shopee nao liberar o escrow do pedido. Nulo aqui
+          nao vira zero: o pedido some de sum(gmv_item) sem avisar. Foi assim que
+          R$ 26,03 sumiram do GMV de julho/2026.
+        data_tests:
+          # So cobra escrow de pedido mais velho que a janela de releitura da
+          # extracao (SHOPEE_REFRESH_WINDOW_DAYS, hoje 30 dias). Pedido recente
+          # sem escrow e normal e nao pode derrubar o pipeline; pedido antigo sem
+          # escrow e furo, porque a releitura ja nao alcanca mais ele.
+          # warn_if/error_if: um caso preso avisa, quatro derrubam o build. Falhar
+          # no primeiro bloquearia o warehouse inteiro por um pedido travado.
+          - not_null:
+              config:
+                where: >
+                  order_status not in ('CANCELLED', 'UNPAID')
+                  and create_time < timestamp_sub(current_timestamp(), interval 30 day)
+                severity: error
+                warn_if: ">0"
+                error_if: ">3"
 
       - name: receita_bruta
         description: "Repasse efetivo da Shopee para a linha, ja rateado por item. Zero em pedidos cancelados. Use ESTE campo para somar repasse, nunca escrow_amount."
 
       - name: receita_liquida
-        description: "receita_bruta menos 6% de imposto."
+        description: "GMV menos 6% de imposto. Base do calculo: faturamento, conforme regime tributario."
 
       - name: comissao_shopee
         description: >

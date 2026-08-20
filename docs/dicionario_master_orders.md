@@ -60,7 +60,12 @@ Isso é importante na hora de contar: para saber **quantos pedidos** você teve,
 > parecem uma data — `260130...` — mas seguem o relógio de Singapura, onde fica o
 > servidor da Shopee. Nos 95 pedidos da base, todos os 95 batem com Singapura e apenas
 > 28 batem com Brasília. O pedido acima tem `260130` no número e foi feito no dia 29.
-| `order_status` | Situação atual do pedido na Shopee. Valores possíveis: `COMPLETED` (concluído), `SHIPPED` (enviado), `TO_CONFIRM_RECEIVE` (aguardando confirmação do cliente), `CANCELLED` (cancelado), `TO_RETURN` (em devolução). |
+| `order_status` | Situação atual do pedido na Shopee. Oito valores já vistos, do mais cru ao final: `UNPAID` (criado e nunca pago), `READY_TO_SHIP` (pago, aguardando envio), `PROCESSED` (em preparação), `SHIPPED` (enviado), `TO_CONFIRM_RECEIVE` (aguardando confirmação do cliente), `TO_RETURN` (em devolução), `CANCELLED` (cancelado), `COMPLETED` (concluído). |
+
+> **Status muda com o tempo.** A extração relê os pedidos dos últimos 30 dias a cada
+> rodada, então pedido mais novo que isso ainda está em movimento. Pedido que não
+> chegou em `COMPLETED` ou `CANCELLED` e já passou de 30 dias não muda mais sozinho:
+> isso é sinal de que algo travou, não de que o pedido está mesmo em trânsito.
 | `customer_type` | Se foi a primeira compra daquele cliente (`Novo`) ou se ele já havia comprado antes (`Recorrente`). |
 
 ---
@@ -108,6 +113,17 @@ e devolvidos continuam contando**.
 
 > **Por que cancelado conta?** Porque GMV mede volume de vendas geradas, não dinheiro
 > recebido. Para dinheiro de verdade, use `receita_bruta`.
+
+> **Cuidado ao comparar com o painel da Shopee.** O `gmv_item` fica **vazio** enquanto
+> a Shopee não libera o escrow do pedido — e vazio não vira zero: o pedido simplesmente
+> some da soma, sem aviso nenhum. Antes de comparar, conte quantas linhas do período
+> estão com `gmv_item` vazio.
+>
+> O painel conta **pedidos pagos**. Aqui, `order_status <> 'CANCELLED'` entrega isso:
+> pedido não pago é cancelado automaticamente pela Shopee e cai fora do filtro sozinho.
+> A única exceção é o pedido criado há poucos dias que ainda não foi pago nem cancelado —
+> ele fica em `UNPAID` e entra na conta. Em recorte que inclua os últimos dias, e onde
+> essa diferença importe, use `pay_time is not null`.
 
 **Exemplo real** (pedido `260728S8J8BE78`):
 

@@ -162,15 +162,15 @@ select
     -- receita_bruta: escrow (repasse liquido da Shopee) rateado por item
     receita_bruta,
 
-    -- receita_liquida: receita_bruta menos 6% de imposto.
-    -- ATENCAO: base = repasse da Shopee, nao o GMV. Se o regime tributario exigir
-    -- que a aliquota incida sobre o faturamento, trocar receita_bruta por gmv_item.
+    -- receita_liquida: GMV menos 6% de imposto.
+    -- Base = faturamento (GMV), definido em 16/08/2026. Herda o nulo do gmv_item
+    -- enquanto o escrow do pedido nao chega.
     {% if target.type == 'bigquery' %}
     -- cast do fator para numeric: sem isso o BigQuery promove a conta para
     -- FLOAT64 e o arredondamento pode divergir do Postgres nos centavos.
-    round(receita_bruta * cast(0.94 as numeric), 2) as receita_liquida,
+    round(gmv_item * cast(0.94 as numeric), 2) as receita_liquida,
     {% else %}
-    round(receita_bruta * (1 - 0.06), 2) as receita_liquida,
+    round(gmv_item * (1 - 0.06), 2) as receita_liquida,
     {% endif %}
 
     -- comissao_shopee (take rate): fatia do GMV retida pela Shopee, somando

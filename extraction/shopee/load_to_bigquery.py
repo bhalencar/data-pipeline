@@ -1,12 +1,19 @@
 """
 Carrega os JSONs brutos da camada bronze no BigQuery.
 
-Le os mesmos arquivos que o load_to_postgres.py ja processou (pasta loaded/),
-permitindo popular o BigQuery sem depender do Postgres.
-
 Uso:
-    python extraction/shopee/load_to_bigquery.py            # carga completa
-    python extraction/shopee/load_to_bigquery.py --truncate # apaga antes
+    python extraction/shopee/load_to_bigquery.py                  # carga normal
+    python extraction/shopee/load_to_bigquery.py --truncate       # apaga antes
+    python extraction/shopee/load_to_bigquery.py --incluir-loaded # inclui data/bronze/*/loaded/
+
+Sobre --incluir-loaded: a pasta loaded/ guarda os JSONs que o load_to_postgres.py
+ja tinha processado, e existia para popular o BigQuery na migracao de 2026 sem
+depender do Postgres. Essa migracao terminou.
+
+Ler loaded/ por padrao virou perigoso. A carga e APPEND e o silver desempata por
+loaded_at desc, entao recarregar um snapshot antigo faz o dado velho ganhar do
+novo: o pedido volta para o status que tinha em julho, com um loaded_at de hoje.
+Por isso a pasta so entra quando pedida explicitamente.
 """
 
 import json
@@ -59,15 +66,16 @@ def garantir_tabela(client: bigquery.Client, nome: str) -> str:
     return table_id
 
 
-def coletar_arquivos(nome_tabela: str) -> list[Path]:
-    """Pega os JSONs tanto da pasta principal quanto da subpasta loaded/."""
+def coletar_arquivos(nome_tabela: str, incluir_loaded: bool = False) -> list[Path]:
+    """Pega os JSONs da pasta principal. Ver o docstring do modulo sobre loaded/."""
     pasta = BRONZE_DIR / nome_tabela
     if not pasta.exists():
         return []
     arquivos = sorted(pasta.glob("*.json"))
-    loaded = pasta / "loaded"
-    if loaded.exists():
-        arquivos += sorted(loaded.glob("*.json"))
+    if incluir_loaded:
+        loaded = pasta / "loaded"
+        if loaded.exists():
+            arquivos += sorted(loaded.glob("*.json"))
     return arquivos
 
 
@@ -104,11 +112,16 @@ def montar_linhas(arquivos: list[Path]) -> list[dict]:
 
 def main() -> None:
     truncar = "--truncate" in sys.argv
+    incluir_loaded = "--incluir-loaded" in sys.argv
     client = get_client()
+
+    if incluir_loaded:
+        print("Atencao: incluindo data/bronze/*/loaded/ — snapshots antigos podem "
+              "sobrescrever dado mais novo no desempate por loaded_at.")
 
     for nome in TABELAS:
         table_id = garantir_tabela(client, nome)
-        arquivos = coletar_arquivos(nome)
+        arquivos = coletar_arquivos(nome, incluir_loaded=incluir_loaded)
 
         if not arquivos:
             print(f"{nome}: nenhum arquivo encontrado, pulando.")

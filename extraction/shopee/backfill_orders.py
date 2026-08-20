@@ -1,26 +1,34 @@
+"""
+Reextração pontual de um intervalo de datas, fora da rodada diária.
+
+Uso:
+    python extraction/shopee/backfill_orders.py                          # 01/01/2026 até ontem
+    python extraction/shopee/backfill_orders.py 2026-07-15 2026-07-22    # só esse intervalo
+
+As datas são de CRIAÇÃO do pedido, no fuso de Brasília, e o intervalo é inclusivo
+nas duas pontas.
+"""
+
 import os
+import sys
 import json
 import time
 from datetime import datetime, timedelta, timezone
-from get_orders import get_order_list, get_order_detail, get_escrow_detail
+from get_orders import (
+    get_order_list,
+    get_order_detail,
+    get_escrow_detail,
+    fatiar_janela,
+    MAX_WINDOW_DAYS as WINDOW_DAYS,
+)
 
-WINDOW_DAYS = 15  # limite máximo da API por chamada
 TZ = timezone(timedelta(hours=-3))  # Brasília
 
 
-def daterange_windows(start_date, end_date, window_days=WINDOW_DAYS):
-    """Gera janelas de até `window_days` dias, cobrindo start_date até end_date."""
-    windows = []
-    current = start_date
-    while current <= end_date:
-        window_end = min(current + timedelta(days=window_days - 1), end_date)
-        windows.append((current, window_end))
-        current = window_end + timedelta(days=1)
-    return windows
-
-
 def run_backfill(start_date, end_date):
-    windows = daterange_windows(start_date, end_date)
+    # fatiar_janela vem do get_orders: uma implementação só do fatiamento, para
+    # o backfill e a rodada diária não divergirem no limite da API.
+    windows = fatiar_janela(start_date, end_date)
     print(f"Backfill de {start_date} a {end_date}, em {len(windows)} janela(s) de até {WINDOW_DAYS} dias.")
 
     for window_start, window_end in windows:
@@ -60,7 +68,24 @@ def run_backfill(start_date, end_date):
 
 
 if __name__ == "__main__":
-    START_DATE = datetime(2026, 1, 1).date()
-    END_DATE = datetime.now(TZ).date() - timedelta(days=1)  # até ontem
+    ontem = datetime.now(TZ).date() - timedelta(days=1)
+
+    if len(sys.argv) == 3:
+        START_DATE = datetime.strptime(sys.argv[1], "%Y-%m-%d").date()
+        END_DATE = datetime.strptime(sys.argv[2], "%Y-%m-%d").date()
+    elif len(sys.argv) == 1:
+        START_DATE = datetime(2026, 1, 1).date()
+        END_DATE = ontem
+    else:
+        print("Uso: backfill_orders.py [AAAA-MM-DD AAAA-MM-DD]")
+        sys.exit(2)
+
+    if START_DATE > END_DATE:
+        print(f"Erro: data inicial ({START_DATE}) é depois da final ({END_DATE}).")
+        sys.exit(2)
+    if END_DATE > ontem:
+        print(f"Erro: data final ({END_DATE}) é depois de ontem ({ontem}). "
+              "O dia corrente ainda está aberto e não deve ser extraído.")
+        sys.exit(2)
 
     run_backfill(START_DATE, END_DATE)
