@@ -28,10 +28,18 @@ Isso é importante na hora de contar: para saber **quantos pedidos** você teve,
 
 | Campo | O que é |
 |---|---|
+| `canal` | O marketplace de onde veio o pedido. Hoje sempre `shopee`. |
 | `order_sn` | O número do pedido na Shopee. É o mesmo código que aparece no painel do vendedor. |
 | `item_id` | Código interno da Shopee para o produto (o "produto pai"). |
 | `model_id` | Código interno da Shopee para a variação (cor, tamanho). Fica vazio em produtos sem variação. |
 | `item_sku` | Seu código de produto, quando cadastrado no nível do produto pai. |
+
+> **Sobre o `canal`.** Ele é constante hoje, e por isso não separa nada — a loja só
+> vende na Shopee. Ele existe desde já porque a `despesa_operacional` também tem canal,
+> e um DRE por canal precisa dos dois lados. Quando o Mercado Livre entrar, só muda a
+> origem do valor e nenhuma query precisa ser reescrita.
+>
+> Coluna constante não dispensa o rótulo: **continue dizendo "Shopee", nunca "total"**.
 | `sku_custo` | **Use este.** É o código que realmente identifica o que foi vendido — pega a variação quando existe, senão o produto pai. É por ele que a tabela busca o custo na planilha. |
 | `item_name` | Nome do produto como aparece no anúncio. |
 | `model_name` | Nome da variação vendida. Ex: "Marrom-Escuro \| Potes-Preto". |

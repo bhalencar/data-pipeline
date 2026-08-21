@@ -10,6 +10,20 @@ models:
       Grao: order_sn + item_id + model_id.
 
     columns:
+      - name: canal
+        description: >
+          Marketplace de origem do pedido. Hoje constante em 'shopee' -- e o unico
+          canal. Existe desde ja porque a despesa_operacional tambem tem canal, e
+          o DRE por canal precisa dos dois lados. Quando o Mercado Livre entrar,
+          so muda a origem do valor.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['shopee', 'mercado_livre']
+              config:
+                severity: warn
+
       - name: order_sn
         description: "Numero do pedido na Shopee, igual ao do painel do vendedor. Use count(distinct order_sn) para contar pedidos."
         tests:
@@ -172,3 +186,65 @@ models:
           Repasse do PEDIDO INTEIRO, repetido em cada linha do mesmo pedido.
           NUNCA somar este campo: a soma fica inflada em pedidos multi-item.
           Para somar repasse use receita_bruta. Pode ser negativo em devolucoes.
+  - name: despesa_operacional
+    description: >
+      Despesa operacional da loja, lancada a mao. Grao: competencia x canal x categoria
+      x descricao, uma linha por mes. Regime de COMPETENCIA -- contrato anual pago de
+      uma vez entra rateado, e o desembolso nao esta no warehouse.
+      Despesa recorrente nao se propaga sozinha: mes sem lancamento significa que
+      ninguem apurou, e o DRE deve parar na margem de contribuicao e declarar isso,
+      nunca assumir que o valor do mes anterior continua valendo.
+      NAO cobre imposto (ja em receita_liquida), nem CMV, embalagem e mao de obra
+      (ja no custo do produto -- a loja opera sem estoque proprio).
+
+    columns:
+      - name: competencia
+        description: "Mes a que a despesa se refere, sempre no dia 1o. Competencia, nao pagamento."
+        data_tests:
+          - not_null
+
+      - name: canal
+        description: >
+          A que canal a despesa pertence: 'shopee', 'mercado_livre' ou 'comum'.
+          'comum' e despesa do NEGOCIO, nao de um canal -- pro labore, assinaturas,
+          consultoria. Ela NAO vem rateada de proposito: quem monta o DRE escolhe o
+          criterio de rateio, e assim o criterio fica visivel em vez de escondido na
+          digitacao da planilha.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['shopee', 'mercado_livre', 'comum']
+              config:
+                severity: warn
+
+      - name: categoria
+        description: >
+          Tipo da despesa. midia_manual e PROVISORIA: cobre mar a ago/2026 enquanto
+          o master_ads nao existe, e precisa ser removida quando ele entrar -- caso
+          contrario o gasto com anuncio conta duas vezes no DRE.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - assinaturas
+                  - agencia_marketing
+                  - consultoria
+                  - pro_labore
+                  - midia_manual
+              config:
+                severity: warn
+
+      - name: descricao
+        description: "O item dentro da categoria (Canva, Avantpro, Pro labore). Faz parte do grao."
+        data_tests:
+          - not_null
+
+      - name: valor
+        description: "Valor mensal em reais. Sempre a parcela do mes, nunca o total do contrato."
+        data_tests:
+          - not_null
+
+      - name: observacao
+        description: "Texto livre: rateio aplicado, motivo, ou registro de que o gasto conferido foi zero."

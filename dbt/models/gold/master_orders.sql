@@ -133,6 +133,12 @@ rateio as (
 )
 
 select
+    -- canal: por enquanto constante, porque a Shopee e o unico marketplace.
+    -- Existe desde ja para o DRE por canal nascer funcionando dos dois lados --
+    -- a despesa_operacional tambem tem canal. Quando o Mercado Livre entrar,
+    -- so muda a origem do valor, e nenhum consumidor precisa mudar de query.
+    'shopee' as canal,
+
     order_sn,
     item_id,
     model_id,
