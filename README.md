@@ -11,58 +11,130 @@ Esta é a porta de entrada técnica. A explicação narrativa do projeto — pap
 | Projeto BigQuery | `cp-pipeline-503623` |
 | Região | `southamerica-east1` |
 | Datasets | `bronze`, `silver`, `gold` |
-| Tabela de consulta | `gold.master_orders` |
+| Tabelas de consulta | `gold.master_orders`, `gold.despesa_operacional` |
 
 **Consulte sempre o `gold`.** Silver e bronze existem para depurar o pipeline. Exceção: `silver.dicionario_campos`, que é metadado.
 
 ## Como roda
 
-Cloud Run Job disparado pelo Cloud Scheduler, 1x/dia às 06:00 (America/Sao_Paulo), carregando o dia anterior.
+Cloud Run Job disparado pelo Cloud Scheduler, 1x/dia às 06:00 (America/Sao_Paulo).
+
+A extração relê os pedidos criados nos **últimos 30 dias**, não só os de ontem. Pedido não é imutável: status e escrow mudam depois da criação, e sem releitura eles congelam na primeira leitura. A janela é fatiada em pedaços de 15 dias, limite da API `get_order_list`.
 
 Entrada: `orchestration/run_pipeline_cloud.py`. O container está no `Dockerfile` (Python 3.12 slim); ele copia `extraction/`, `orchestration/` e `dbt/`, e aponta `DBT_PROFILES_DIR` para `/app/dbt`.
 
 `orchestration/run_pipeline.py` é a versão local antiga, do tempo do Postgres. **Está parada.**
 
+## Deploy — e a armadilha que já custou quatro dias
+
+**Rodar `dbt` na sua máquina não muda o que a nuvem executa.** O job das 06:00 roda a imagem publicada, e ele recria o gold por cima do que você fez local.
+
+Isso vale inclusive para os **CSVs de seed**: eles são copiados para dentro da imagem pelo `COPY dbt/ ./dbt/`. Lançamento novo de custo ou despesa só é permanente depois de novo build.
+
+```bash
+gcloud builds submit \
+  --tag southamerica-east1-docker.pkg.dev/cp-pipeline-503623/cp-pipeline/pipeline:latest
+
+gcloud run jobs update pipeline-casa-e-patas \
+  --region southamerica-east1 \
+  --image southamerica-east1-docker.pkg.dev/cp-pipeline-503623/cp-pipeline/pipeline:latest
+
+gcloud run jobs execute pipeline-casa-e-patas --region southamerica-east1 --wait
+```
+
+**O `run jobs update` não é opcional.** O Cloud Run resolve a tag para um digest fixo quando a revisão é criada — ele não relê o `:latest` a cada execução. Sem esse comando, a imagem nova sobe para o Artifact Registry e o job continua rodando a antiga, em silêncio, sem erro nenhum.
+
+Foi exatamente o que aconteceu entre 21 e 24/08/2026: quatro manhãs recriando o gold com código velho, desfazendo colunas que já estavam commitadas.
+
+Cloud Build e não Docker local: o Mac é ARM e o Cloud Run precisa de x86.
+
+**Mudança em modelo do gold só é dada como pronta depois de uma rodada da nuvem.** Verificar logo após o `dbt build` local prova que o código funciona, não que ele está em produção.
+
 ## Estrutura
 
 ```
 extraction/shopee/      Extração da API da Shopee (auth, token, pedidos, escrow)
-extraction/planilhas/   Custo de produtos: planilha manual -> CSV para o dbt
+extraction/planilhas/   Planilhas manuais -> CSV para o dbt (custo e despesa)
 dbt/models/silver/      Views de limpeza, uma por entidade
-dbt/models/gold/        master_orders (tabela materializada)
-dbt/seeds/              custo_produtos.csv e dicionario_campos.csv
+dbt/models/gold/        master_orders e despesa_operacional (tabelas materializadas)
+dbt/seeds/              custo_produtos, dicionario_campos, despesa_operacional_manual
+dbt/tests/              Testes singulares (grão das tabelas do gold)
 orchestration/          Orquestradores (cloud e local)
 docker/                 Compose e SQL da fase Postgres — histórico
-docs/                   Documentação de apoio
+docs/                   Dicionários de negócio, um por tabela do gold
 consultas/              SQL avulso
 ```
 
+## Rodar localmente — são três venvs, e eles não são intercambiáveis
+
+Os venvs ficam **fora do repositório**, e a separação é proposital.
+
+| Venv | Para quê |
+|---|---|
+| `~/.venvs/cp-bigquery` | **Rodar dbt no BigQuery.** É o que você usa em 90% das vezes. |
+| `venv/` do projeto | Scripts de extração da Shopee (`requirements.txt`) |
+| `~/.venvs/cp-postgres` | Postgres local, **congelado** — fase antiga do projeto |
+
+```bash
+source ~/.venvs/cp-bigquery/bin/activate
+cd ~/Documents/"Casa e Patas"/data-pipeline/dbt
+dbt build --target bigquery
+```
+
+**Por que não usar o `venv/` do projeto para dbt.** O `requirements.txt` instala `dbt-bigquery` junto com `google-cloud-bigquery` e `google-cloud-storage`. Essa combinação **trava qualquer comando dbt por até 13 minutos**, em espera de I/O. Já custou uma sessão inteira em 09/08/2026, com um `dbt seed` de 31 linhas aparentemente pendurado. Não estava travado; estava esperando.
+
+**Duas variáveis que vivem fora do repositório:**
+
+- `export DBT_VERSION_CHECK=false` — está no `~/.zshrc`. Sem ela, o dbt gasta tempo checando versão a cada comando.
+- Credenciais em `.env` na raiz, não versionado. O `.gitignore` cobre `.env`, `credentials.json` e os caches de token da Shopee; verificado que nenhum deles está no histórico do git.
+
+**`openpyxl` não vem com o `dbt-bigquery`.** Os scripts de export leem `.xlsx` via pandas e precisam dele:
+
+```bash
+source ~/.venvs/cp-bigquery/bin/activate
+pip install openpyxl
+```
+
+Sem ele o export falha com `ModuleNotFoundError`, o CSV **não é regenerado**, e o `dbt seed` seguinte carrega a versão anterior sem reclamar. A planilha muda e o warehouse não.
+
 ## O dicionário de campos
 
-Duas superfícies, com papéis diferentes. Não confunda:
+Três superfícies de origem e uma de leitura. Não confunda:
 
 | Onde | Papel |
 |---|---|
-| `dbt/seeds/dicionario_campos.csv` | **Onde se escreve.** Fonte do dicionário: `campo`, `grupo`, `descricao`, `cuidados`. |
-| `silver.dicionario_campos` | **Onde se lê.** Gerada do CSV por `dbt seed`. É o que os agentes consultam. |
+| `dbt/seeds/dicionario_campos.csv` | **Onde se escreve.** Colunas: `tabela`, `campo`, `grupo`, `descricao`, `cuidados`. |
 | `dbt/models/gold/schema.yml` | Descrição de coluna nativa do BigQuery, via `persist_docs`. Aparece no console. |
+| `docs/dicionario_<tabela>.md` | **Versão de negócio**, uma por tabela do gold, para leitor não técnico. |
+| `silver.dicionario_campos` | **Onde se lê.** Gerada do CSV por `dbt seed`. É o que os agentes consultam. |
 
-Campo novo no gold pede linha no CSV **e** entrada no `schema.yml`. Quem adiciona campo adiciona as duas — é o mesmo commit.
+A coluna `tabela` existe desde 21/08/2026, quando o gold ganhou a segunda tabela. Sem ela o dicionário fica ambíguo: `descricao` existe nas duas e significa coisas diferentes. **Toda junção com o dicionário precisa das duas chaves**, `tabela` e `campo`.
 
-> `docs/dicionario_master_orders.md` é uma cópia congelada de 31/07/2026. **Não é fonte e não deve ser usada para decidir nada.**
+Campo novo no gold pede entrada nas **três** superfícies de origem, no mesmo commit.
 
-## Custo dos produtos
+## Planilhas manuais
 
-Custo point-in-time: aplica-se o vigente na data do pedido. A planilha é **append-only** — nunca editar linha antiga, sempre acrescentar linha nova com nova `data_vigencia_inicio`.
+Duas fontes entram à mão, pelo mesmo padrão: planilha `.xlsx` → script de export → CSV de seed → `dbt seed`.
 
-Para atualizar:
+**Custo dos produtos** (`custo_produtos.xlsx`). Custo point-in-time: aplica-se o vigente na data do pedido. É **append-only** — nunca editar linha antiga, sempre acrescentar com nova `data_vigencia_inicio`.
 
 ```bash
-python3.12 extraction/planilhas/export_custo_csv.py
-cd dbt && dbt seed && dbt run --select master_orders
+source ~/.venvs/cp-bigquery/bin/activate
+python extraction/planilhas/export_custo_csv.py
+cd dbt && dbt build --select custo_produtos+ --target bigquery
 ```
 
 Pedidos anteriores a junho/2026 não têm custo cadastrado — `cmv_unitario`, `cmv_total` e `margem_item` ficam nulos de propósito.
+
+**Despesa operacional** (`despesa_operacional.xlsx`). Uma linha por mês de competência. Detalhe em `docs/dicionario_despesa_operacional.md`.
+
+```bash
+source ~/.venvs/cp-bigquery/bin/activate
+python extraction/planilhas/export_despesa_csv.py
+cd dbt && dbt build --select despesa_operacional_manual+ --target bigquery
+```
+
+Nos dois casos, o `+` no `--select` roda o seed **e** o modelo que depende dele. E nos dois casos, **lembre do build** — ver a seção de deploy.
 
 ## Armadilhas que custam caro
 
@@ -72,17 +144,10 @@ Pedidos anteriores a junho/2026 não têm custo cadastrado — `cmv_unitario`, `
 4. **Conte pedidos com `count(distinct order_sn)`.** Cada linha é um item, não um pedido.
 5. **Filtre `order_status <> 'CANCELLED'`** em qualquer análise financeira. Cancelado tem repasse zero e distorce média.
 6. **Comissão média é ponderada:** `1 - sum(receita_bruta) / sum(gmv_item)`. Média da coluna faz pedido de R$ 20 pesar igual a um de R$ 200.
+7. **`gmv_item` fica nulo enquanto o escrow não chega — e nulo não vira zero.** O pedido some da soma sem aviso. Antes de comparar com o painel da Shopee, conte quantas linhas do período estão com `gmv_item` vazio.
+8. **`receita_bruta` e `receita_liquida` não formam par.** A bruta é o repasse da Shopee; a líquida parte do GMV menos 6% de imposto. Uma **nunca** se subtrai da outra, e `receita_liquida > receita_bruta` é o esperado, não um defeito.
 
 A lista completa está em `silver.dicionario_campos`, coluna `cuidados`.
-
-## Rodar localmente
-
-```bash
-python3.12 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-```
-
-Credenciais em `.env` na raiz — não versionado. O `.gitignore` cobre `.env`, `credentials.json` e os caches de token da Shopee; verificado que nenhum deles está no histórico do git.
 
 ## Manutenção com data marcada
 
@@ -92,4 +157,8 @@ Renovação: Shopee Open Platform → App Management → App List → app "data 
 
 ## Limite estrutural conhecido
 
-`gold.master_orders` é recriado inteiro a cada rodada (`CREATE OR REPLACE`). Consequência: **não há histórico de status de pedido** — o que se vê é sempre o estado atual. Com o volume de hoje a escolha é a certa, mas precisa ser revisitada antes de o volume crescer, não depois.
+`gold.master_orders` é recriado inteiro a cada rodada (`CREATE OR REPLACE`). Consequência: **não há histórico de status de pedido**.
+
+Desde a releitura de 30 dias, o status que se vê é o **atual** — antes era o da primeira extração, e ficava congelado. Mas continua não sendo possível responder "quantos pedidos estavam em trânsito na semana passada": a tabela guarda o estado de agora, não a série.
+
+Com o volume de hoje a escolha é a certa, mas precisa ser revisitada antes de o volume crescer, não depois.

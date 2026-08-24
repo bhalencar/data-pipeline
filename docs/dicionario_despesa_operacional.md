@@ -17,7 +17,7 @@ Grão: `competencia` × `canal` × `categoria` × `descricao`.
 | `competencia` | O mês a que a despesa se refere, sempre no dia 1º. |
 | `canal` | A que canal a despesa pertence: `shopee`, `mercado_livre` ou `comum`. |
 | `categoria` | O tipo: `assinaturas`, `agencia_marketing`, `consultoria`, `pro_labore`, `midia_manual`. |
-| `descricao` | O item dentro da categoria — Canva, Avantpro, Pró-labore. |
+| `descricao` | O item dentro da categoria — Canva, Avantpro, Shopee Ads. |
 | `valor` | Quanto foi naquele mês, em reais. |
 | `observacao` | Rateio aplicado, motivo, ou registro de que o gasto conferido foi zero. |
 
@@ -29,7 +29,7 @@ Três valores: `shopee`, `mercado_livre` e `comum`.
 
 Use o canal **só quando a despesa existe por causa dele**. Mídia da Shopee é `shopee`. A agência de marketing de março a julho é `shopee`, porque trabalhava a loja da Shopee.
 
-Pró-labore, Canva, Avantpro e a consultoria são `comum`: são despesa do **negócio**, não de um canal. Isso vale **mesmo hoje**, que só existe um canal.
+Canva, Avantpro e a consultoria são `comum`: são despesa do **negócio**, não de um canal. Isso vale **mesmo hoje**, que só existe um canal.
 
 > **Por que não marcar tudo como `shopee`, já que só existe Shopee?** Porque no dia em que o Mercado Livre entrar, toda a estrutura de custo do negócio estaria pendurada na Shopee — e a comparação entre canais nasceria errada, justamente quando ela passa a importar. Classificar certo agora custa nada; corrigir depois exige reescrever o histórico.
 
@@ -37,7 +37,7 @@ Pró-labore, Canva, Avantpro e a consultoria são `comum`: são despesa do **neg
 
 Consequência prática: **somar só a despesa de um canal subestima o custo daquele canal.** Um DRE por canal precisa dizer o que fez com a `comum`.
 
-Hoje, jan a ago/2026: R$ 6.389,16 em `shopee` e R$ 24.014,38 em `comum` — a maior parte do custo do negócio não pertence a canal nenhum.
+Hoje, jan/2026 a jul/2027: R$ 6.389,16 em `shopee` e R$ 14.014,38 em `comum` — a maior parte do custo do negócio não pertence a canal nenhum.
 
 ---
 
@@ -57,7 +57,7 @@ O último mês do rateio leva os centavos que sobram (R$ 1.114,55), para o contr
 
 Esta é a regra mais importante da tabela, e ela é deliberada.
 
-**Despesa recorrente não se propaga sozinha.** Assinatura e pró-labore precisam de uma linha nova a cada mês. Se ninguém lançar setembro, setembro não tem despesa registrada — e o DRE deve **parar na margem de contribuição e declarar que parou**, nunca assumir que o valor de agosto continua valendo.
+**Despesa recorrente não se propaga sozinha.** Assinatura precisa de uma linha nova a cada mês. Se ninguém lançar setembro, setembro não tem despesa registrada — e o DRE deve **parar na margem de contribuição e declarar que parou**, nunca assumir que o valor de agosto continua valendo.
 
 A alternativa (uma linha valendo "daqui em diante") economizaria digitação, mas faria o modelo afirmar despesa em meses que ninguém apurou. Deixaria de distinguir *"conferi e é isso"* de *"ninguém olhou"*.
 
@@ -75,6 +75,16 @@ Abril e maio não tiveram nenhum pedido, mas tiveram R$ 1.077 de despesa cada. U
 
 **3. Existem linhas no futuro.**
 A consultoria está lançada até julho/2027. Um DRE que não filtre por mês corrente vai exibir meses que ainda não aconteceram, com despesa e sem receita. Filtrar é decisão de quem monta o relatório.
+
+---
+
+## `pro_labore` é categoria válida e não tem nenhum lançamento
+
+A categoria existe na lista permitida, mas **nenhuma linha usa ela**. Houve um lançamento de R$ 10.000 em ago/2026 que foi removido em 24/08: o Bruno confirmou que **não houve pró-labore em nenhum mês de 2026**.
+
+Isso é exatamente a distinção que a tabela existe para preservar. Ausência de linha **não** significa que o pró-labore foi zero — significa que ninguém apurou. Se em algum mês houver retirada, ela entra como linha nova, canal `comum`.
+
+> Enquanto não houver lançamento, **o DRE não deve exibir linha de pró-labore**, nem com valor zero. Zero afirma que se conferiu e não houve; ausência não afirma nada.
 
 ---
 
@@ -117,5 +127,19 @@ cd dbt && dbt build --select despesa_operacional_manual+ --target bigquery
 O `+` no `--select` faz o dbt rodar o seed **e** o modelo que depende dele. Sem o `+`, só o seed é carregado.
 
 > **O export exige `openpyxl`.** Ele não vem com o `dbt-bigquery`. Se der `ModuleNotFoundError: No module named 'openpyxl'`, rode `pip install openpyxl` com o venv `~/.venvs/cp-bigquery` ativo. Sem ele o export falha, o CSV **não é regenerado**, e o `dbt seed` carrega a versão anterior sem reclamar — a planilha muda e o warehouse não.
+
+> **Os comandos acima param no seu computador.** Os CSVs de seed são copiados para **dentro da imagem** do Cloud Run (`COPY dbt/ ./dbt/` no Dockerfile). O `dbt seed` local atualiza o BigQuery na hora, mas o job que roda todo dia às 06:00 continua carregando a versão que estava na imagem — e recria a tabela por cima da sua.
+>
+> Ou seja: **lançamento novo só é permanente depois de um novo build.**
+>
+> ```bash
+> gcloud builds submit \
+>   --tag southamerica-east1-docker.pkg.dev/cp-pipeline-503623/cp-pipeline/pipeline:latest
+> gcloud run jobs update pipeline-casa-e-patas \
+>   --region southamerica-east1 \
+>   --image southamerica-east1-docker.pkg.dev/cp-pipeline-503623/cp-pipeline/pipeline:latest
+> ```
+>
+> O `run jobs update` não é opcional: o Cloud Run resolve a tag para um digest fixo quando a revisão é criada, e não relê o `:latest` a cada execução. Sem ele, a imagem nova sobe e o job continua na antiga, em silêncio. Foi o que aconteceu entre 21 e 24/08 — quatro dias de gold recriado com código velho.
 
 O script recusa a exportação se alguma competência não estiver no dia 1º — data no meio do mês costuma significar que alguém preencheu pensando em data de pagamento.
