@@ -19,3 +19,42 @@ models:
       - name: quantity_purchased
         tests:
           - not_null
+  - name: stg_ads_shop_daily
+    description: >
+      Performance diaria de anuncios no nivel da loja. FONTE DE VERDADE do
+      gasto com midia para o DRE: uma linha por dia, sem risco de dupla
+      contagem e sem depender de campanha continuar existindo.
+    columns:
+      - name: data
+        data_tests:
+          - not_null
+          - unique
+      - name: gasto
+        data_tests:
+          - not_null
+
+  - name: stg_ads_campaign_daily
+    description: >
+      Performance por campanha x dia. Serve para atribuir gasto; o total do
+      DRE sai do stg_ads_shop_daily.
+    columns:
+      - name: campaign_id
+        data_tests:
+          - not_null
+      - name: data
+        data_tests:
+          - not_null
+      - name: gasto
+        data_tests:
+          - not_null
+
+  - name: stg_ads_campaign_setting
+    description: >
+      Configuracao atual das campanhas, com a ligacao para o produto anunciado.
+      Uma linha por campanha, SEM data: e o estado de agora, e a Shopee nao
+      expoe historico. Junte por campaign_id apenas.
+    columns:
+      - name: campaign_id
+        data_tests:
+          - not_null
+          - unique

@@ -49,6 +49,18 @@ if __name__ == "__main__":
             "Carga para o BigQuery (bronze)",
             [sys.executable, "extraction/shopee/load_to_bigquery.py"],
         )
+        # Anuncios entram depois dos pedidos e antes do dbt. A ordem importa:
+        # falha de etapa interrompe a rodada inteira, entao o dado principal
+        # (pedido) e carregado primeiro. Se a API de Ads cair, o pedido do dia
+        # ja esta no bronze -- so o dbt e que nao roda.
+        run_step(
+            "Extracao de anuncios (Shopee Ads)",
+            [sys.executable, "extraction/shopee/get_ads.py"],
+        )
+        run_step(
+            "Carga de anuncios para o BigQuery (bronze)",
+            [sys.executable, "extraction/shopee/load_ads_to_bigquery.py"],
+        )
         run_step(
             "Transformacao + testes (dbt build)",
             ["dbt", "build", "--target", "bigquery_cloud"],

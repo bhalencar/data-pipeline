@@ -248,3 +248,134 @@ models:
 
       - name: observacao
         description: "Texto livre: rateio aplicado, motivo, ou registro de que o gasto conferido foi zero."
+
+  - name: master_ads
+    description: >
+      Desempenho de midia paga na Shopee. Cada linha e uma campanha num dia.
+      Grao: campaign_id + data.
+      O TOTAL DE GASTO DO DRE NAO SAI DAQUI -- sai de silver.stg_ads_shop_daily,
+      que tem uma linha por dia no nivel da loja. Esta tabela serve para
+      atribuir gasto por campanha e por produto. Medido em julho/2026: loja
+      839.17 e soma das campanhas 839.20, tres centavos sobre 744 linhas.
+      Cuidado com as metricas 'amplas' (broad): elas creditam a mesma venda a
+      mais de uma campanha e NAO se somam entre campanhas.
+
+    columns:
+      - name: canal
+        description: >
+          Marketplace da campanha. Hoje constante em 'shopee'. Existe desde ja
+          para o DRE por canal nascer funcionando dos dois lados, igual ao
+          master_orders e a despesa_operacional.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['shopee', 'mercado_livre']
+              config:
+                severity: warn
+
+      - name: campaign_id
+        description: "Identificador da campanha na Shopee. Junte com stg_ads_campaign_setting por este campo, nunca por data: o setting nao tem data."
+        data_tests:
+          - not_null
+
+      - name: data
+        description: "Dia da metrica, no fuso de Brasilia. A API entrega em DD-MM-YYYY e a conversao acontece na extracao."
+        data_tests:
+          - not_null
+
+      - name: nome_anuncio
+        description: "Nome da campanha como aparece no painel de Ads. Vem da performance, nao da configuracao, entao reflete o nome vigente no periodo."
+
+      - name: tipo_anuncio
+        description: "manual, auto ou gms. Auto Product Ads esta sendo depreciado pela Shopee."
+
+      - name: posicionamento
+        description: "Onde o anuncio aparece. 'all' e o padrao das campanhas da loja."
+
+      - name: item_id
+        description: >
+          Produto anunciado, para ligar gasto de midia a SKU. NULO quando a
+          campanha nao aparece mais na listagem da Shopee -- campanha encerrada
+          some, e o gasto historico dela fica aqui sem item. Nulo aqui e
+          esperado, nao defeito.
+
+      - name: qtd_itens
+        description: >
+          Quantos produtos a campanha anuncia. Em 02/09/2026 todas as 24
+          campanhas tinham exatamente 1, e e essa premissa que permite guardar
+          item_id como coluna. Se passar de 1, o gasto deixa de ser atribuivel
+          a um SKU sem rateio arbitrario -- o teste assert_ads_campanha_um_item
+          avisa, e o modelo precisa virar tabela ponte.
+
+      - name: status_campanha
+        description: "Estado atual da campanha: ongoing, closed, paused. E o estado de AGORA, nao o do dia da linha -- a Shopee nao expoe historico de configuracao."
+
+      - name: orcamento_campanha
+        description: "Orcamento configurado hoje. Mesmo aviso do status: e o valor atual, nao o vigente na data da linha."
+
+      - name: meta_roas
+        description: "Meta de ROAS quando o lance e automatico. Nulo em campanha de lance manual."
+
+      - name: impressoes
+        description: "Quantas vezes o anuncio foi exibido."
+
+      - name: cliques
+        description: "Cliques no anuncio."
+
+      - name: ctr
+        description: "Cliques dividido por impressoes, ja calculado pela Shopee. NAO tire media desta coluna para consolidar periodo -- media de razao nao e razao da media. Recalcule com sum(cliques)/sum(impressoes)."
+
+      - name: gasto
+        description: "Quanto a campanha gastou no dia, em reais. E o unico campo de dinheiro desta tabela que se soma sem ressalva. Ainda assim, o total do DRE sai do nivel loja."
+        data_tests:
+          - not_null
+
+      - name: custo_por_clique
+        description: "gasto/cliques do dia, ja calculado. Razao: nao tire media para consolidar, recalcule."
+
+      - name: custo_por_conversao_direta
+        description: "gasto por pedido direto, ja calculado. Razao: nao tire media para consolidar."
+
+      - name: pedidos_diretos
+        description: "Pedidos do proprio item anunciado, atribuidos ao clique. E o numero conservador."
+
+      - name: gmv_direto
+        description: >
+          Faturamento gerado pelo item anunciado. Atribuicao de 7 dias creditada
+          ao DIA DO CLIQUE: nunca vai bater com o master_orders do mesmo dia, e
+          isso nao e erro. Sao perguntas diferentes -- 'quanto o anuncio de
+          terca gerou' e 'quanto vendemos na terca'.
+
+      - name: roi_direto
+        description: "Retorno sobre investimento direto, ja calculado. No endpoint de loja a mesma ideia se chama direct_roas -- provavelmente a mesma metrica com outro nome, mas isso NAO foi verificado. Razao: nao tire media para consolidar."
+
+      - name: cir_direto
+        description: "Custo sobre receita direto (o inverso do ROI), ja calculado. Razao: nao tire media."
+
+      - name: pedidos_amplos
+        description: "Pedidos de QUALQUER item da loja depois do clique. NAO SOMAR ENTRE CAMPANHAS: a mesma venda e creditada a mais de uma campanha."
+
+      - name: gmv_amplo
+        description: >
+          Faturamento de qualquer item da loja apos o clique. NAO SOMAR ENTRE
+          CAMPANHAS -- credito duplicado, o mesmo defeito do escrow_amount no
+          master_orders. Para total de loja, use stg_ads_shop_daily.
+
+      - name: roi_amplo
+        description: "ROI considerando venda ampla, ja calculado. Razao: nao tire media."
+
+      - name: cir_amplo
+        description: "Custo sobre receita amplo, ja calculado. Razao: nao tire media."
+
+      - name: valor_pedidos_diretos
+        description: "Valor dos pedidos diretos. Distinto do gmv_direto pela forma como a Shopee contabiliza; use gmv_direto salvo motivo especifico."
+
+      - name: valor_pedidos_amplos
+        description: "Valor dos pedidos amplos. Mesmo aviso de nao somar entre campanhas."
+
+      - name: taxa_conversao
+        description: "Conversao do dia, ja calculada. Razao: nao tire media para consolidar."
+
+      - name: loaded_at
+        description: "Quando a linha foi carregada no bronze. A releitura de 30 dias reprocessa o mesmo dia varias vezes, e o silver mantem a versao mais recente."

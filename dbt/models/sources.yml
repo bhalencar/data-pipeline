@@ -7,3 +7,6 @@ sources:
       - name: get_order_list
       - name: get_order_detail
       - name: get_escrow_detail
+      - name: get_ads_shop_daily
+      - name: get_ads_campaign_daily
+      - name: get_ads_campaign_setting
