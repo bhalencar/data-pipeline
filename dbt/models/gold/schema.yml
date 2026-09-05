@@ -220,9 +220,7 @@ models:
 
       - name: categoria
         description: >
-          Tipo da despesa. midia_manual e PROVISORIA: cobre mar a ago/2026 enquanto
-          o master_ads nao existe, e precisa ser removida quando ele entrar -- caso
-          contrario o gasto com anuncio conta duas vezes no DRE.
+          Tipo da despesa.
         data_tests:
           - not_null
           - accepted_values:
@@ -232,7 +230,6 @@ models:
                   - agencia_marketing
                   - consultoria
                   - pro_labore
-                  - midia_manual
               config:
                 severity: warn
 
