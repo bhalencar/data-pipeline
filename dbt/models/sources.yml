@@ -10,3 +10,4 @@ sources:
       - name: get_ads_shop_daily
       - name: get_ads_campaign_daily
       - name: get_ads_campaign_setting
+      - name: get_keywords

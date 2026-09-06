@@ -13,6 +13,10 @@ dbt/target/
 dbt/dbt_packages/
 dbt/logs/
 
+# dbt rodado da raiz do projeto em vez de dentro de dbt/ -- gera logs/ aqui.
+# Apareceu em 05/09/2026 e quase entrou num commit.
+logs/
+
 # Sistema macOS
 .DS_Store
 
@@ -30,3 +34,11 @@ data/
 # Logs de execução
 orchestration/*.log
 docker/logs/
+
+# Página do console do BigQuery salva pelo navegador. Um "Salvar como" do
+# console traz o HTML mais uma pasta _files com dezenas de MB de JS e CSS do
+# Google -- os "Query 1.1" de 05/09 somavam 43 MB. Isso NAO pode entrar no
+# repositório: o git guarda todo blob no histórico para sempre, mesmo depois
+# de o arquivo ser apagado. A pasta consultas/ é para SQL, não para páginas.
+consultas/*.html
+consultas/*_files/

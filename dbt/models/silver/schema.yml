@@ -58,3 +58,22 @@ models:
         data_tests:
           - not_null
           - unique
+
+  - name: stg_keywords
+    description: >
+      Palavras-chave por item e snapshot, ja tipadas e deduplicadas. O dedup usa
+      item_id + palavra + data_snapshot, nao a chave_natural do bronze: a palavra
+      e texto livre e chave concatenada com delimitador fica fragil.
+    columns:
+      - name: item_id
+        data_tests:
+          - not_null
+      - name: palavra
+        data_tests:
+          - not_null
+      - name: data_snapshot
+        data_tests:
+          - not_null
+      - name: volume_busca
+        data_tests:
+          - not_null

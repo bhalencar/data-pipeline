@@ -376,3 +376,82 @@ models:
 
       - name: loaded_at
         description: "Quando a linha foi carregada no bronze. A releitura de 30 dias reprocessa o mesmo dia varias vezes, e o silver mantem a versao mais recente."
+
+  - name: master_keywords
+    description: >
+      Volume de busca da Shopee por palavra, com serie temporal. Cada linha e
+      uma palavra, para um item, num snapshot semanal.
+      Grao: item_id + palavra + data_snapshot.
+      EXISTE POR CAUSA DO SNAPSHOT: o volume da Shopee e uma janela movel de 30
+      dias sem historico, entao sem esta tabela "esse termo cresceu" e uma frase
+      impossivel de dizer. Snapshot nao coletado esta PERDIDO -- nao ha backfill,
+      diferente do master_orders e do master_ads, que releem e se autocorrigem.
+      CUIDADO PRINCIPAL: volume_busca e do TERMO na Shopee inteira, nao do nosso
+      item. A mesma palavra aparece para varios itens com o mesmo volume --
+      somar entre itens conta a mesma busca varias vezes.
+
+    columns:
+      - name: canal
+        description: >
+          Marketplace da consulta. Hoje constante em 'shopee'. Existe desde ja
+          pelo mesmo motivo das outras tabelas do gold.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['shopee', 'mercado_livre']
+              config:
+                severity: warn
+
+      - name: item_id
+        description: "Produto a partir do qual a palavra foi sugerida. A Shopee exige um item para responder: nao existe consulta de termo solto."
+        data_tests:
+          - not_null
+
+      - name: palavra
+        description: "O termo de busca. Texto livre, com espaco e acento. Faz parte do grao."
+        data_tests:
+          - not_null
+
+      - name: data_snapshot
+        description: "Data da coleta semanal. E o eixo do tempo desta tabela -- sem ele nao ha serie."
+        data_tests:
+          - not_null
+
+      - name: volume_busca
+        description: >
+          Buscas pelo termo nos ultimos 30 dias, na Shopee INTEIRA. NAO e busca
+          pelo nosso produto e NAO tem relacao direta com venda. NAO SOMAR entre
+          itens: a mesma palavra aparece para varios itens com o mesmo valor, e
+          somar conta a mesma busca duas vezes. Para o volume de um termo, use
+          max ou filtre um item.
+        data_tests:
+          - not_null
+
+      - name: qualidade
+        description: "quality_score da Shopee, de 1 a 10. Quao relevante o termo e para o item. Alto volume com qualidade baixa costuma ser termo generico demais."
+
+      - name: lance_sugerido
+        description: "Lance em reais que a Shopee sugere para anunciar neste termo. Serve ao Inacio para estimar custo antes de criar campanha."
+
+      - name: no_catalogo
+        description: >
+          Se o item estava ativo na loja NAQUELE snapshot. Produto pausado
+          continua sendo coletado de proposito -- a Caminha Pet saiu do ar em
+          agosto por falta de estoque no fornecedor e vai voltar; quando voltar,
+          a serie dela nao tera buraco.
+
+      - name: volume_anterior
+        description: "Volume da MESMA palavra no MESMO item, no snapshot anterior. Nulo no primeiro snapshot de cada palavra -- esperado, nao defeito."
+
+      - name: variacao_absoluta
+        description: "volume_busca menos volume_anterior. Numero de buscas ganhas ou perdidas na semana. Nulo no primeiro snapshot."
+
+      - name: variacao_pct
+        description: "Variacao percentual contra o snapshot anterior. Nula quando o volume anterior era zero ou nao existe. Leia junto do absoluto: 100% sobre 50 buscas e ruido."
+
+      - name: posicao_no_item
+        description: "Ranking da palavra dentro do item naquele snapshot, 1 = mais buscada. Atalho para 'as 5 mais buscadas deste produto'."
+
+      - name: loaded_at
+        description: "Quando a linha foi carregada no bronze. Se a coleta for reexecutada no mesmo dia apos falha, o silver mantem a leitura mais recente."

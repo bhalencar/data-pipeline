@@ -61,6 +61,21 @@ if __name__ == "__main__":
             "Carga de anuncios para o BigQuery (bronze)",
             [sys.executable, "extraction/shopee/load_ads_to_bigquery.py"],
         )
+        # Palavras-chave sao SEMANAIS, nao diarias: o volume da Shopee e uma
+        # janela movel de 30 dias, entao coletar todo dia daria 7 snapshots
+        # quase identicos por semana. A trava de dia vive dentro do get_keywords
+        # -- nos outros dias ele sai em 1 segundo sem chamar a API, e o loader
+        # nao acha arquivo novo e nao faz nada. Por isso as duas etapas rodam
+        # todo dia sem condicional aqui: a decisao esta no script, onde da para
+        # testar, e nao espalhada pelo orquestrador.
+        run_step(
+            "Extracao de palavras-chave (Shopee, semanal)",
+            [sys.executable, "extraction/shopee/get_keywords.py"],
+        )
+        run_step(
+            "Carga de palavras-chave para o BigQuery (bronze)",
+            [sys.executable, "extraction/shopee/load_keywords_to_bigquery.py"],
+        )
         run_step(
             "Transformacao + testes (dbt build)",
             ["dbt", "build", "--target", "bigquery_cloud"],
