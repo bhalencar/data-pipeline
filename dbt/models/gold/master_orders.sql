@@ -84,7 +84,18 @@ items_orders as (
         escrow_items.preco_desconto_linha,
         escrow_items.cupom_vendedor,
         escrow_items.cupom_shopee,
-        escrow_items.gmv_item
+        escrow_items.gmv_item,
+
+        -- loaded_at: quando o BRONZE recebeu este pedido pela ultima vez.
+        -- NAO e quando o gold foi construido, e a diferenca importa: o
+        -- master_orders e recriado inteiro toda rodada (CREATE OR REPLACE),
+        -- entao um timestamp de construcao seria igual para todas as linhas
+        -- e nao diria nada. Este aqui varia por pedido e responde a pergunta
+        -- util: "ha quanto tempo a Shopee nao me manda novidade DESTE pedido".
+        --
+        -- Vem do stg_order_items, que ja deduplica por loaded_at desc --
+        -- ou seja, e sempre a carga mais recente daquele item.
+        items.loaded_at
     from items
     left join orders on items.order_sn = orders.order_sn
     left join customer_flags on items.order_sn = customer_flags.order_sn
@@ -190,6 +201,10 @@ select
     frete_custo_real,
     frete_pago_comprador,
     valor_pago_produto,
-    escrow_amount
+    escrow_amount,
+
+    -- Coluna de carga. Ver comentario no CTE items_orders sobre por que ela
+    -- rastreia o bronze e nao a construcao do gold.
+    loaded_at
 from rateio
 order by create_time, order_sn, sku_custo

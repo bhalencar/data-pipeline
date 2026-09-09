@@ -204,3 +204,22 @@ Se você pagou o frete de retorno, o `escrow_amount` daquele pedido fica negativ
 
 **5. Ao filtrar vendas "de verdade", exclua cancelados.**
 `where order_status <> 'CANCELLED'` resolve a maioria dos casos.
+
+**6. Preço unitário zerado não é venda com defeito.**
+Existe um pedido (21/07/2026) em que `discounted_price` veio **0**. A venda
+aconteceu normalmente: `preco_desconto_linha` R$ 56,16, `valor_pago_produto`
+R$ 56,16 e `gmv_item` R$ 55,03 estão todos corretos.
+
+A Shopee às vezes não preenche o campo de preço unitário com desconto, mas o
+valor da linha chega íntegro por outros campos. **Para somar dinheiro, use
+`gmv_item` ou `receita_bruta`** — nunca `discounted_price × quantidade`.
+
+**7. `loaded_at` diz respeito ao pedido, não à tabela.**
+A coluna marca quando a Shopee mandou notícia **daquele pedido** pela última vez,
+e não quando a tabela foi construída. Como o `master_orders` é reconstruído todo
+dia, um carimbo de construção seria igual em todas as linhas e não serviria para
+nada.
+
+Pedido antigo com `loaded_at` antigo é normal: significa que nada mudou nele.
+Todos os itens de um mesmo pedido têm o mesmo valor, porque a Shopee entrega o
+pedido inteiro numa chamada só.

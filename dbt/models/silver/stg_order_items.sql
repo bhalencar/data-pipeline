@@ -45,7 +45,8 @@ items_exploded as (
     select
         order_sn,
         item,
-        extraction_date
+        extraction_date,
+        loaded_at
     from deduped,
          unnest(json_query_array(raw_data, '$.item_list')) as item
 
@@ -54,7 +55,8 @@ items_exploded as (
     select
         order_sn,
         jsonb_array_elements(raw_data -> 'item_list') as item,
-        extraction_date
+        extraction_date,
+        loaded_at
     from deduped
 
 {% endif %}
@@ -98,5 +100,14 @@ select
 
 {% endif %}
 
-    extraction_date
+    extraction_date,
+
+    -- loaded_at: quando o bronze recebeu ESTE pedido pela ultima vez.
+    -- Sobrevive ao explode de item_list de proposito -- o master_orders
+    -- precisa dela para ter coluna de carga, e sem carregar aqui o valor
+    -- morre no unnest. Vem de `deduped`, que ja escolheu a carga mais
+    -- recente por order_sn, entao todos os itens de um pedido compartilham
+    -- o mesmo loaded_at. Isso e correto: a Shopee entrega o pedido inteiro
+    -- numa chamada so.
+    loaded_at
 from items_exploded

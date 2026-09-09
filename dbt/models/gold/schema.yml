@@ -186,6 +186,19 @@ models:
           Repasse do PEDIDO INTEIRO, repetido em cada linha do mesmo pedido.
           NUNCA somar este campo: a soma fica inflada em pedidos multi-item.
           Para somar repasse use receita_bruta. Pode ser negativo em devolucoes.
+
+      - name: loaded_at
+        description: >
+          Quando o bronze recebeu este pedido pela ultima vez. NAO e quando o
+          gold foi construido: o master_orders e recriado inteiro toda rodada,
+          entao um carimbo de construcao seria identico em todas as linhas e
+          nao diria nada. Este varia por pedido e responde 'ha quanto tempo a
+          Shopee nao manda novidade DESTE pedido'. Todos os itens de um mesmo
+          pedido compartilham o valor, porque a Shopee entrega o pedido inteiro
+          numa chamada so.
+        data_tests:
+          - not_null
+
   - name: despesa_operacional
     description: >
       Despesa operacional da loja, lancada a mao. Grao: competencia x canal x categoria

@@ -13,7 +13,7 @@ master_orders,order_status,Data e status,"Situacao atual do pedido. Oito valores
 master_orders,customer_type,Cliente,Indica se foi a primeira compra daquele cliente (Novo) ou se ele ja havia comprado antes (Recorrente).,
 master_orders,quantity_purchased,Quantidade e preco,Quantas unidades daquele item o cliente levou.,
 master_orders,preco_tabela,Quantidade e preco,"Preco cheio, sem desconto. E o valor de referencia do anuncio.",
-master_orders,discounted_price,Quantidade e preco,"Preco de venda por unidade, ja com as promocoes aplicadas.","E unitario. Nao confundir com preco_desconto_linha, que e o total."
+master_orders,discounted_price,Quantidade e preco,"Preco de venda por unidade, ja com as promocoes aplicadas.","E unitario. Nao confundir com preco_desconto_linha, que e o total. MEDIDO 09/09/2026: existe 1 pedido com este campo ZERADO (2607219SB9DK7B, 21/07) e isso NAO E DEFEITO -- preco_desconto_linha 56.16, valor_pago_produto 56.16 e gmv_item 55.03 estao corretos. A Shopee as vezes nao preenche o preco unitario com desconto, mas o valor da linha chega integro por outros campos. NAO criar teste de nao-zero aqui: falharia numa venda saudavel e ensinaria a ignorar alarme."
 master_orders,preco_desconto_linha,Quantidade e preco,"Preco de venda da linha inteira, ou seja preco vezes quantidade. Vem do relatorio financeiro da Shopee.",E o total da linha. Nao somar junto com discounted_price.
 master_orders,cmv_unitario,Custo e margem,Quanto custa uma unidade daquele produto para voce. Vem da planilha de custos.,"Fica vazio em pedidos anteriores a junho de 2026, de produtos que sairam de linha. E proposital."
 master_orders,cmv_total,Custo e margem,Custo total daquela linha: custo unitario vezes quantidade.,
@@ -31,51 +31,52 @@ master_orders,frete_pago_comprador,Frete,Quanto o cliente pagou de frete.,
 master_orders,frete_custo_real,Frete,Quanto o frete custou de verdade.,"Se for maior que o valor pago pelo cliente, a diferenca saiu de algum lugar: subsidio da Shopee ou do seu bolso."
 master_orders,valor_pago_produto,Detalhe financeiro,Valor dos produtos conforme o relatorio financeiro da Shopee.,
 master_orders,escrow_amount,Detalhe financeiro,O repasse do pedido inteiro.,Nunca somar. Em pedidos com varios itens este valor se repete em cada linha e a soma fica inflada. Para somar repasse use receita_bruta. Pode ser negativo em devolucoes onde voce pagou o frete de retorno.
+master_orders,loaded_at,Tempo,Quando o bronze recebeu este pedido pela ultima vez.,"NAO e quando o gold foi construido. O master_orders e recriado inteiro toda rodada, entao um carimbo de construcao seria igual em todas as linhas e nao diria nada. Este varia por pedido: responde 'ha quanto tempo a Shopee nao manda novidade DESTE pedido'. Todos os itens de um mesmo pedido compartilham o valor, porque a Shopee entrega o pedido inteiro numa chamada so."
 despesa_operacional,competencia,Despesa operacional,"Mes a que a despesa se refere, sempre no dia 1o. E competencia e nao pagamento: contrato anual pago de uma vez entra rateado, um doze avos por mes.","Nunca use para saber quando o dinheiro saiu - isso nao esta no warehouse. Mes sem linha significa que ninguem apurou, NAO que a despesa foi zero. Zero explicito so aparece quando alguem conferiu e registrou."
 despesa_operacional,canal,Despesa operacional,"A que canal a despesa pertence: shopee, mercado_livre ou comum.","'comum' e despesa do NEGOCIO e nao de um canal - pro labore, assinaturas, consultoria. Ela NAO vem rateada de proposito: quem monta o DRE escolhe o criterio de rateio, e assim o criterio fica visivel e auditavel em vez de escondido na digitacao. Somar despesa de um canal sem decidir o que fazer com a 'comum' subestima o custo daquele canal."
 despesa_operacional,categoria,Despesa operacional,"O tipo da despesa: assinaturas, agencia_marketing, consultoria, pro_labore ou midia_manual.","midia_manual e PROVISORIA: existe so enquanto o master_ads nao existe, e cobre mar a ago/2026. Quando o master_ads entrar, estas linhas precisam ser removidas, senao o gasto com anuncio conta duas vezes."
 despesa_operacional,descricao,Despesa operacional,O item dentro da categoria. Exemplo: Canva e Avantpro dentro de assinaturas.,"E o que permite saber qual item mudou quando o total da categoria muda. Junto com competencia e categoria, forma o grao da tabela."
 despesa_operacional,valor,Despesa operacional,Valor mensal da despesa em reais.,"E sempre a parcela do mes, nunca o desembolso total de um contrato. Nao inclui imposto (ja esta em receita_liquida) nem CMV, embalagem e mao de obra (ja estao no custo do produto)."
 despesa_operacional,observacao,Despesa operacional,"Texto livre: rateio aplicado, motivo, ou registro de que o gasto conferido foi zero.",Vazio nao significa nada - e so ausencia de comentario.
-master_ads,canal,Identificacao,"Marketplace da campanha. Hoje constante em 'shopee'.","Existe desde ja para o DRE por canal nascer funcionando dos dois lados, igual ao master_orders e a despesa_operacional."
-master_ads,campaign_id,Identificacao,"Identificador da campanha na Shopee.","Junte com a configuracao por este campo, nunca por data: o setting nao tem data e e sempre o estado atual."
+master_ads,canal,Identificacao,Marketplace da campanha. Hoje constante em 'shopee'.,"Existe desde ja para o DRE por canal nascer funcionando dos dois lados, igual ao master_orders e a despesa_operacional."
+master_ads,campaign_id,Identificacao,Identificador da campanha na Shopee.,"Junte com a configuracao por este campo, nunca por data: o setting nao tem data e e sempre o estado atual."
 master_ads,data,Tempo,"Dia da metrica, fuso de Brasilia.","A API entrega em DD-MM-YYYY, diferente do resto do projeto. A conversao para ISO acontece na extracao."
-master_ads,nome_anuncio,Identificacao,"Nome da campanha no painel de Ads.","Vem da performance e nao da configuracao, entao reflete o nome vigente no periodo consultado."
-master_ads,tipo_anuncio,Identificacao,"manual, auto ou gms.","Auto Product Ads esta sendo depreciado pela Shopee. As 24 campanhas de 02/09/2026 eram todas manual."
-master_ads,posicionamento,Identificacao,"Onde o anuncio aparece.","'all' e o padrao das campanhas da loja."
-master_ads,item_id,Identificacao,"Produto anunciado. E o caminho entre gasto de midia e SKU.","NULO quando a campanha saiu da listagem da Shopee -- campanha encerrada some e o gasto historico fica sem item. Nulo aqui e esperado, nao defeito."
-master_ads,qtd_itens,Qualidade,"Quantos produtos a campanha anuncia.","Em 02/09/2026 todas as 24 campanhas tinham 1. E essa premissa que permite item_id ser coluna. Se passar de 1, o gasto nao e mais atribuivel a um SKU sem rateio arbitrario e o modelo vira tabela ponte."
+master_ads,nome_anuncio,Identificacao,Nome da campanha no painel de Ads.,"Vem da performance e nao da configuracao, entao reflete o nome vigente no periodo consultado."
+master_ads,tipo_anuncio,Identificacao,"manual, auto ou gms.",Auto Product Ads esta sendo depreciado pela Shopee. As 24 campanhas de 02/09/2026 eram todas manual.
+master_ads,posicionamento,Identificacao,Onde o anuncio aparece.,'all' e o padrao das campanhas da loja.
+master_ads,item_id,Identificacao,Produto anunciado. E o caminho entre gasto de midia e SKU.,"NULO quando a campanha saiu da listagem da Shopee -- campanha encerrada some e o gasto historico fica sem item. Nulo aqui e esperado, nao defeito."
+master_ads,qtd_itens,Qualidade,Quantos produtos a campanha anuncia.,"Em 02/09/2026 todas as 24 campanhas tinham 1. E essa premissa que permite item_id ser coluna. Se passar de 1, o gasto nao e mais atribuivel a um SKU sem rateio arbitrario e o modelo vira tabela ponte."
 master_ads,status_campanha,Identificacao,"Estado da campanha: ongoing, closed, paused.","E o estado de AGORA, nao o do dia da linha. A Shopee nao expoe historico de configuracao."
-master_ads,orcamento_campanha,Dinheiro,"Orcamento configurado.","Valor atual, nao o vigente na data da linha. Mesmo aviso do status_campanha."
-master_ads,meta_roas,Metrica,"Meta de ROAS quando o lance e automatico.","Nulo em campanha de lance manual."
-master_ads,impressoes,Volume,"Quantas vezes o anuncio foi exibido.",""
-master_ads,cliques,Volume,"Cliques no anuncio.",""
-master_ads,ctr,Metrica,"Cliques divididos por impressoes, ja calculado pela Shopee.","Razao pronta: NAO tire media desta coluna para consolidar periodo. Recalcule com sum(cliques)/sum(impressoes)."
-master_ads,gasto,Dinheiro,"Quanto a campanha gastou no dia.","Unico campo de dinheiro desta tabela que se soma sem ressalva. Ainda assim, o total do DRE sai de silver.stg_ads_shop_daily: campanha encerrada some da listagem e leva o gasto junto."
+master_ads,orcamento_campanha,Dinheiro,Orcamento configurado.,"Valor atual, nao o vigente na data da linha. Mesmo aviso do status_campanha."
+master_ads,meta_roas,Metrica,Meta de ROAS quando o lance e automatico.,Nulo em campanha de lance manual.
+master_ads,impressoes,Volume,Quantas vezes o anuncio foi exibido.,
+master_ads,cliques,Volume,Cliques no anuncio.,
+master_ads,ctr,Metrica,"Cliques divididos por impressoes, ja calculado pela Shopee.",Razao pronta: NAO tire media desta coluna para consolidar periodo. Recalcule com sum(cliques)/sum(impressoes).
+master_ads,gasto,Dinheiro,Quanto a campanha gastou no dia.,"Unico campo de dinheiro desta tabela que se soma sem ressalva. Ainda assim, o total do DRE sai de silver.stg_ads_shop_daily: campanha encerrada some da listagem e leva o gasto junto."
 master_ads,custo_por_clique,Metrica,"gasto dividido por cliques, ja calculado.","Razao pronta: nao tire media para consolidar, recalcule."
-master_ads,custo_por_conversao_direta,Metrica,"Gasto por pedido direto, ja calculado.","Razao pronta: nao tire media para consolidar."
-master_ads,pedidos_diretos,Volume,"Pedidos do proprio item anunciado, atribuidos ao clique.","E o numero conservador. Use este quando houver duvida."
-master_ads,gmv_direto,Dinheiro,"Faturamento gerado pelo item anunciado.","Atribuicao de 7 dias creditada ao DIA DO CLIQUE: nunca bate com o master_orders do mesmo dia, e isso nao e erro. Sao perguntas diferentes."
+master_ads,custo_por_conversao_direta,Metrica,"Gasto por pedido direto, ja calculado.",Razao pronta: nao tire media para consolidar.
+master_ads,pedidos_diretos,Volume,"Pedidos do proprio item anunciado, atribuidos ao clique.",E o numero conservador. Use este quando houver duvida.
+master_ads,gmv_direto,Dinheiro,Faturamento gerado pelo item anunciado.,"Atribuicao de 7 dias creditada ao DIA DO CLIQUE: nunca bate com o master_orders do mesmo dia, e isso nao e erro. Sao perguntas diferentes."
 master_ads,roi_direto,Metrica,"Retorno sobre investimento direto, ja calculado.","No endpoint de loja a mesma ideia se chama direct_roas. Provavelmente a mesma metrica com outro nome, mas NAO foi verificado. Razao pronta: nao tire media."
-master_ads,cir_direto,Metrica,"Custo sobre receita direto, o inverso do ROI.","Razao pronta: nao tire media para consolidar."
-master_ads,pedidos_amplos,Volume,"Pedidos de qualquer item da loja apos o clique.","NAO SOMAR ENTRE CAMPANHAS: a mesma venda e creditada a mais de uma campanha."
-master_ads,gmv_amplo,Dinheiro,"Faturamento de qualquer item da loja apos o clique.","NAO SOMAR ENTRE CAMPANHAS -- credito duplicado, mesmo defeito do escrow_amount. Para total da loja use silver.stg_ads_shop_daily."
-master_ads,roi_amplo,Metrica,"ROI considerando venda ampla, ja calculado.","Razao pronta: nao tire media. E herda o problema de credito duplicado do gmv_amplo."
-master_ads,cir_amplo,Metrica,"Custo sobre receita amplo.","Razao pronta: nao tire media."
-master_ads,valor_pedidos_diretos,Dinheiro,"Valor dos pedidos diretos.","Distinto do gmv_direto pela contabilizacao da Shopee. Prefira gmv_direto salvo motivo especifico."
-master_ads,valor_pedidos_amplos,Dinheiro,"Valor dos pedidos amplos.","Mesmo aviso de nao somar entre campanhas."
-master_ads,taxa_conversao,Metrica,"Conversao do dia, ja calculada.","Razao pronta: nao tire media para consolidar."
-master_ads,loaded_at,Tempo,"Quando a linha foi carregada no bronze.","A releitura de 30 dias reprocessa o mesmo dia varias vezes; o silver mantem a versao mais recente."
-master_keywords,canal,Identificacao,"Marketplace da consulta. Hoje constante em 'shopee'.","Existe desde ja pelo mesmo motivo das outras tabelas do gold: analise por canal nasce funcionando quando o Mercado Livre entrar."
-master_keywords,item_id,Identificacao,"Produto a partir do qual a palavra foi sugerida.","A Shopee EXIGE um item para responder: nao existe consulta de termo solto. Testado em 06/09/2026 -- input_keyword com termo de fora do catalogo devolve palavras do proprio item, nunca do termo pedido. E teto da plataforma, nao lacuna."
+master_ads,cir_direto,Metrica,"Custo sobre receita direto, o inverso do ROI.",Razao pronta: nao tire media para consolidar.
+master_ads,pedidos_amplos,Volume,Pedidos de qualquer item da loja apos o clique.,NAO SOMAR ENTRE CAMPANHAS: a mesma venda e creditada a mais de uma campanha.
+master_ads,gmv_amplo,Dinheiro,Faturamento de qualquer item da loja apos o clique.,"NAO SOMAR ENTRE CAMPANHAS -- credito duplicado, mesmo defeito do escrow_amount. Para total da loja use silver.stg_ads_shop_daily."
+master_ads,roi_amplo,Metrica,"ROI considerando venda ampla, ja calculado.",Razao pronta: nao tire media. E herda o problema de credito duplicado do gmv_amplo.
+master_ads,cir_amplo,Metrica,Custo sobre receita amplo.,Razao pronta: nao tire media.
+master_ads,valor_pedidos_diretos,Dinheiro,Valor dos pedidos diretos.,Distinto do gmv_direto pela contabilizacao da Shopee. Prefira gmv_direto salvo motivo especifico.
+master_ads,valor_pedidos_amplos,Dinheiro,Valor dos pedidos amplos.,Mesmo aviso de nao somar entre campanhas.
+master_ads,taxa_conversao,Metrica,"Conversao do dia, ja calculada.",Razao pronta: nao tire media para consolidar.
+master_ads,loaded_at,Tempo,Quando a linha foi carregada no bronze.,A releitura de 30 dias reprocessa o mesmo dia varias vezes; o silver mantem a versao mais recente.
+master_keywords,canal,Identificacao,Marketplace da consulta. Hoje constante em 'shopee'.,Existe desde ja pelo mesmo motivo das outras tabelas do gold: analise por canal nasce funcionando quando o Mercado Livre entrar.
+master_keywords,item_id,Identificacao,Produto a partir do qual a palavra foi sugerida.,"A Shopee EXIGE um item para responder: nao existe consulta de termo solto. Testado em 06/09/2026 -- input_keyword com termo de fora do catalogo devolve palavras do proprio item, nunca do termo pedido. E teto da plataforma, nao lacuna."
 master_keywords,palavra,Identificacao,"O termo de busca, como o comprador digita.","Texto livre, com espaco e acento. Faz parte do grao junto com item_id e data_snapshot."
-master_keywords,data_snapshot,Tempo,"Data da coleta semanal.","E o eixo do tempo desta tabela. Snapshot nao coletado esta PERDIDO -- a Shopee nao guarda historico e nao ha backfill. Diferente do master_orders e do master_ads, que releem 30 dias e se autocorrigem."
+master_keywords,data_snapshot,Tempo,Data da coleta semanal.,"E o eixo do tempo desta tabela. Snapshot nao coletado esta PERDIDO -- a Shopee nao guarda historico e nao ha backfill. Diferente do master_orders e do master_ads, que releem 30 dias e se autocorrigem."
 master_keywords,volume_busca,Metrica,"Buscas pelo termo nos ultimos 30 dias, na Shopee inteira.","NAO SOMAR ENTRE ITENS: a mesma palavra aparece para varios itens com o MESMO valor, porque o volume e do termo e nao do par termo-item. Somar 'escada pet' em 2 itens da 68.548 buscas onde existem 34.274. Use max, ou filtre um item. E tambem NAO e busca pelo nosso produto: nao ha relacao direta com venda."
-master_keywords,qualidade,Metrica,"quality_score da Shopee, de 1 a 10.","Quao relevante o termo e para o item. Volume alto com qualidade baixa costuma indicar termo generico demais para converter."
-master_keywords,lance_sugerido,Dinheiro,"Lance em reais que a Shopee sugere para o termo.","Serve ao Inacio para estimar custo antes de criar campanha. E sugestao da plataforma, nao compromisso de preco."
-master_keywords,no_catalogo,Qualidade,"Se o item estava ativo na loja naquele snapshot.","Produto pausado continua sendo coletado de proposito. Caso que fundou a regra: a Caminha Pet MDF saiu do ar em agosto/2026 por falta de estoque no FORNECEDOR, nao porque o produto morreu -- quando voltar, a serie dela nao tera buraco."
+master_keywords,qualidade,Metrica,"quality_score da Shopee, de 1 a 10.",Quao relevante o termo e para o item. Volume alto com qualidade baixa costuma indicar termo generico demais para converter.
+master_keywords,lance_sugerido,Dinheiro,Lance em reais que a Shopee sugere para o termo.,"Serve ao Inacio para estimar custo antes de criar campanha. E sugestao da plataforma, nao compromisso de preco."
+master_keywords,no_catalogo,Qualidade,Se o item estava ativo na loja naquele snapshot.,"Produto pausado continua sendo coletado de proposito. Caso que fundou a regra: a Caminha Pet MDF saiu do ar em agosto/2026 por falta de estoque no FORNECEDOR, nao porque o produto morreu -- quando voltar, a serie dela nao tera buraco."
 master_keywords,volume_anterior,Metrica,"Volume da mesma palavra no mesmo item, no snapshot anterior.","Nulo no primeiro snapshot de cada palavra. E esperado, nao defeito."
-master_keywords,variacao_absoluta,Metrica,"Buscas ganhas ou perdidas desde o snapshot anterior.","Nulo no primeiro snapshot. Leia junto do percentual."
-master_keywords,variacao_pct,Metrica,"Variacao percentual contra o snapshot anterior.","Nula quando o volume anterior era zero ou nao existe. SEMPRE leia junto do absoluto: 100% sobre 50 buscas e ruido, 5% sobre 120.000 e movimento real."
+master_keywords,variacao_absoluta,Metrica,Buscas ganhas ou perdidas desde o snapshot anterior.,Nulo no primeiro snapshot. Leia junto do percentual.
+master_keywords,variacao_pct,Metrica,Variacao percentual contra o snapshot anterior.,"Nula quando o volume anterior era zero ou nao existe. SEMPRE leia junto do absoluto: 100% sobre 50 buscas e ruido, 5% sobre 120.000 e movimento real."
 master_keywords,posicao_no_item,Identificacao,"Ranking da palavra dentro do item no snapshot, 1 = mais buscada.","Atalho para 'as 5 mais buscadas deste produto' sem recalcular. Muda a cada snapshot. TETO DA API: a Shopee devolve no maximo 50 palavras por item -- medido em 06/09/2026, 6 dos 25 itens pararam cravado em 50. Nesses itens, palavra que sai do top 50 SOME da coleta e parece ter desaparecido, quando so caiu de posicao. Sumico de palavra em item com 50 linhas nao e sinal de queda de busca."
-master_keywords,loaded_at,Tempo,"Quando a linha foi carregada no bronze.","Se a coleta semanal for reexecutada no mesmo dia apos falha, o silver mantem a leitura mais recente."
+master_keywords,loaded_at,Tempo,Quando a linha foi carregada no bronze.,"Se a coleta semanal for reexecutada no mesmo dia apos falha, o silver mantem a leitura mais recente."

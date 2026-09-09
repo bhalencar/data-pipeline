@@ -13,6 +13,13 @@ models:
       - name: order_sn
         tests:
           - not_null
+      - name: loaded_at
+        description: >
+          Carga do bronze, propagada atraves do unnest de item_list para que o
+          master_orders possa ter coluna de carga. Sem carregar explicitamente
+          no CTE items_exploded o valor se perde no explode.
+        tests:
+          - not_null
       - name: item_sku
         tests:
           - not_null
