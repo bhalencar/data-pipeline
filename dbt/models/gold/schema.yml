@@ -372,6 +372,15 @@ models:
           CAMPANHAS -- credito duplicado, o mesmo defeito do escrow_amount no
           master_orders. Para total de loja, use stg_ads_shop_daily.
 
+          MEDIDO EM 13/09/2026: identico ao gmv_direto em 63 de 63 linhas com
+          venda. Isso NAO e defeito do nosso codigo -- a Shopee entrega os dois
+          campos com o mesmo valor ja no bronze, em campos JSON distintos.
+          E o esperado nesta escala: cada campanha anuncia um item so, e a loja
+          faz cerca de 10 pedidos por semana, entao clicar num anuncio e comprar
+          OUTRO produto dentro da janela de atribuicao quase nunca acontece.
+          Se divergirem num mes de volume maior, a distincao existe e apenas nao
+          se manifestava.
+
       - name: roi_amplo
         description: "ROI considerando venda ampla, ja calculado. Razao: nao tire media."
 
@@ -379,10 +388,33 @@ models:
         description: "Custo sobre receita amplo, ja calculado. Razao: nao tire media."
 
       - name: valor_pedidos_diretos
-        description: "Valor dos pedidos diretos. Distinto do gmv_direto pela forma como a Shopee contabiliza; use gmv_direto salvo motivo especifico."
+        description: >
+          CONTAGEM DE ITENS vendidos, atribuidos ao clique. NAO E VALOR EM REAIS,
+          apesar do nome.
+
+          O nome da coluna esta errado, e o campo de origem da Shopee tambem:
+          direct_order_amount, onde "amount" significa QUANTIDADE. Medido em
+          13/09/2026 nas 63 linhas com venda: varia de 1 a 4, media 1,56, contra
+          GMV medio de R$ 57,21. E sempre maior ou igual a pedidos_diretos,
+          nunca menor -- a relacao esperada entre itens e pedidos.
+
+          A prova: gmv_direto dividido por este campo devolve o PRECO UNITARIO
+          do produto. Na campanha da Esteira Porta Copos da 25,86 ao longo de 17
+          dias, e o produto custa entre 25,49 e 26,41 no master_orders. Na do
+          Trio de Mesas da 57,10, e o produto custa 58,19.
+
+          SOMAR ISTO COMO RECEITA devolve R$ 98 onde o GMV real foi R$ 3.604,08
+          -- erro de 37 vezes para baixo. Para dinheiro, use gmv_direto.
 
       - name: valor_pedidos_amplos
-        description: "Valor dos pedidos amplos. Mesmo aviso de nao somar entre campanhas."
+        description: >
+          CONTAGEM DE ITENS de qualquer produto da loja apos o clique. NAO E
+          VALOR EM REAIS.
+
+          Mesmo defeito de nome do valor_pedidos_diretos: broad_order_amount da
+          Shopee e quantidade. Alem disso vale o aviso de nao somar entre
+          campanhas, porque a mesma venda e creditada a mais de uma. Para
+          dinheiro, use gmv_amplo -- com a mesma ressalva de soma.
 
       - name: taxa_conversao
         description: "Conversao do dia, ja calculada. Razao: nao tire media para consolidar."

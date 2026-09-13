@@ -36,6 +36,51 @@ O amplo é maior e mais bonito. Também é o que engana:
 
 **Na dúvida, use o direto.** Ele é conservador e não infla.
 
+### Hoje os dois são idênticos — e isso é normal
+
+Medido em 13/09/2026: nas 63 linhas com venda, `gmv_amplo` e `gmv_direto` têm
+**exatamente o mesmo valor**. Sempre.
+
+Não é defeito. A Shopee entrega os dois campos com o mesmo número, e o motivo é
+a escala da loja: cada campanha anuncia **um produto só**, e a loja faz cerca de
+10 pedidos por semana. Para os números divergirem, alguém precisaria clicar no
+anúncio da escada e comprar a caminha na mesma semana — o que quase nunca
+acontece com esse volume.
+
+**O aviso de não somar continua valendo**, porque ele protege contra um problema
+que aparece quando o volume cresce. Hoje o risco está dormindo, não resolvido.
+
+---
+
+## O campo que parece dinheiro e não é
+
+> **`valor_pedidos_diretos` e `valor_pedidos_amplos` NÃO são valores em reais.
+> São contagem de itens.**
+
+O nome está errado, e a culpa é compartilhada: o campo da Shopee se chama
+`direct_order_amount`, e ali *amount* significa **quantidade**, não montante.
+
+Como dá para ver na prática: nas 63 linhas com venda, o campo varia de **1 a 4**,
+com média 1,56 — enquanto o GMV médio dessas mesmas linhas é **R$ 57,21**. Nenhum
+faturamento diário de campanha é R$ 2.
+
+A prova definitiva é uma divisão. `gmv_direto ÷ valor_pedidos_diretos` devolve:
+
+| campanha | resultado | preço real do produto |
+|---|---|---|
+| Esteira Porta Copos | 25,86 | R$ 25,49 a 26,41 |
+| Trio de Mesas | 57,10 | R$ 58,19 |
+
+Ou seja: a divisão devolve o **preço unitário**. Isso só acontece se o
+denominador for quantidade de itens.
+
+**O erro que isso causa:** somar `valor_pedidos_diretos` achando que é receita
+devolve **R$ 98** no período inteiro, onde o GMV real foi **R$ 3.604,08**. Um
+erro de 37 vezes para baixo, num número que parece plausível à primeira vista.
+
+**Para dinheiro, use `gmv_direto`.** Para saber quantos itens saíram, aí sim use
+este campo — ele responde isso corretamente.
+
 ---
 
 ## Por que o GMV daqui nunca bate com o das vendas
