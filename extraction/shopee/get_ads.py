@@ -27,6 +27,12 @@ FATOS DA API, todos medidos, nenhum suposto:
     `get_product_level_campaign_id_list`, que o card #1 nao previa.
   - A performance por campanha vem ANINHADA em `metrics_list`. O gasto NAO esta
     no nivel de cima -- ler ali devolve zero em silencio.
+  - O rate limit usa DOIS codigos de erro, nao um. `ads.rate_limit.exceed_api`
+    era o conhecido; em 31/10/2026 apareceu `error_rate_limit`, com a mensagem
+    "Too many requests. You have reached the rate limit. Please try again
+    later.". Tratar so um dos dois nao protege.
+  - O rate limit e TRANSITORIO por definicao: a propria resposta manda tentar
+    de novo mais tarde. Por isso o `chamar()` retenta; ver a nota la.
 
 Uso:
     python extraction/shopee/get_ads.py                      # janela padrao
@@ -62,6 +68,14 @@ MAX_DIAS_ADS = 30          # medido: 31 dias falha
 CAMPANHAS_POR_CHAMADA = 10 # o card #1 fala em 100; 10 mantem a URL curta
 PAUSA_SEG = 1.0            # ads tem rate limit proprio: ads.rate_limit.exceed_api
 
+# Retentativa em rate limit. Os dois codigos abaixo foram observados em
+# producao; qualquer outro erro continua sendo fatal na primeira ocorrencia,
+# porque erro de parametro ou de permissao nao melhora com espera.
+ERROS_RATE_LIMIT = ("error_rate_limit", "ads.rate_limit.exceed_api")
+RATE_LIMIT_TENTATIVAS = 5
+RATE_LIMIT_ESPERA_INICIAL = 5.0
+RATE_LIMIT_ESPERA_MAX = 60.0
+
 WINDOW_DAYS = int(os.getenv("SHOPEE_ADS_WINDOW_DAYS", "30"))
 
 BRONZE_DIR = os.path.join(
@@ -77,23 +91,67 @@ def generate_sign(path: str, ts: int, token: str, shop: int) -> str:
 
 
 def chamar(path: str, extra: dict) -> dict:
-    token, shop = get_valid_access_token()
-    ts = int(time.time())
-    params = {
-        "partner_id": PARTNER_ID,
-        "timestamp": ts,
-        "sign": generate_sign(path, ts, token, shop),
-        "access_token": token,
-        "shop_id": shop,
-        **extra,
-    }
-    resposta = requests.get(f"{API_HOST}{path}", params=params, timeout=45)
-    dados = resposta.json()
-    if dados.get("error"):
-        raise RuntimeError(
-            f"Erro da API em {path}: {dados.get('error')} {dados.get('message', '')}"
-        )
-    return dados
+    """
+    Chamada autenticada, com retentativa apenas em rate limit.
+
+    POR QUE EXISTE: em 31/10/2026 a primeira recusa por rate limit levantava
+    RuntimeError, derrubava a etapa de Ads e com ela o pipeline inteiro --
+    incluindo o `dbt build`, que ja tinha os pedidos do dia no bronze esperando
+    para ser processados. Uma manha de gold velho por uma recusa que a propria
+    Shopee classificou como "tente mais tarde".
+
+    O QUE NAO FAZ, de proposito: nao retenta erro de rede nem JSON invalido, e
+    nao engole erro de parametro, de assinatura ou de permissao. Esses nao
+    melhoram com espera, e transformar todo erro em retentativa esconderia
+    defeito nosso atras de cinco tentativas silenciosas.
+
+    O SIGN E REFEITO A CADA TENTATIVA. Isso nao e detalhe de estilo: a
+    assinatura entra `timestamp`, e a Shopee rejeita timestamp fora da janela
+    de tolerancia. Reusar os params da tentativa anterior depois de dormir 60 s
+    trocaria o erro de rate limit por um erro de assinatura -- mais dificil de
+    diagnosticar que o original.
+    """
+    espera = RATE_LIMIT_ESPERA_INICIAL
+    ultimo_erro = None
+
+    for tentativa in range(1, RATE_LIMIT_TENTATIVAS + 1):
+        token, shop = get_valid_access_token()
+        ts = int(time.time())
+        params = {
+            "partner_id": PARTNER_ID,
+            "timestamp": ts,
+            "sign": generate_sign(path, ts, token, shop),
+            "access_token": token,
+            "shop_id": shop,
+            **extra,
+        }
+        resposta = requests.get(f"{API_HOST}{path}", params=params, timeout=45)
+        dados = resposta.json()
+
+        erro = dados.get("error")
+        if not erro:
+            return dados
+
+        mensagem = dados.get("message", "")
+        ultimo_erro = f"{erro} {mensagem}".strip()
+
+        if erro not in ERROS_RATE_LIMIT:
+            raise RuntimeError(f"Erro da API em {path}: {ultimo_erro}")
+
+        if tentativa == RATE_LIMIT_TENTATIVAS:
+            break
+
+        print(f"  rate limit em {path} (tentativa {tentativa}"
+              f"/{RATE_LIMIT_TENTATIVAS}); aguardando {espera:.0f}s.",
+              flush=True)
+        time.sleep(espera)
+        espera = min(espera * 2, RATE_LIMIT_ESPERA_MAX)
+
+    raise RuntimeError(
+        f"Erro da API em {path}: {ultimo_erro} "
+        f"(persistiu apos {RATE_LIMIT_TENTATIVAS} tentativas com espera "
+        f"progressiva ate {RATE_LIMIT_ESPERA_MAX:.0f}s)"
+    )
 
 
 def fatiar(inicio: date, fim: date, max_dias: int = MAX_DIAS_ADS) -> list:
