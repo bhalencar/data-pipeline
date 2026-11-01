@@ -1,5 +1,37 @@
+# Dependencias da imagem do Cloud Run.
+#
+# POR QUE O dbt ESTA PINADO E O RESTO NAO
+# ----------------------------------------
+# Em 01/11/2026 o build da imagem instalou dbt-core 1.13.0b1 -- uma
+# BETA -- enquanto o venv local roda 1.12.0. O arquivo nao tinha pin
+# nenhum, entao cada `gcloud builds submit` resolvia para o que fosse
+# mais novo no PyPI naquele minuto.
+#
+# O mecanismo e sutil e vale conhecer: o `dbt-bigquery` declara a
+# dependencia `dbt-core<2.0,>=1.10.0rc0`. Como o limite inferior e ele
+# mesmo uma pre-release (o `rc0`), o pip passa a aceitar pre-releases
+# para esse pacote e escolhe a maior disponivel -- a beta da 1.13.
+#
+# O problema nao e a beta em si. E a imagem rodar uma versao de dbt
+# DIFERENTE da que validamos localmente: o runbook manda rodar
+# `dbt build` local antes do deploy justamente para provar que passa, e
+# essa prova nao vale nada se a nuvem roda outro motor.
+#
+# Pin conferido por resolucao em 01/11/2026: devolve dbt-core 1.12.0 e
+# dbt-bigquery 1.12.0, identico ao venv ~/.venvs/cp-bigquery.
+#
+# AINDA NAO ESTA RESOLVIDO POR COMPLETO
+# --------------------------------------
+# pandas, numpy, pyarrow e protobuf continuam flutuando, porque entram
+# como dependencia transitiva do dbt-bigquery[pandas]. No build de
+# 01/11 vieram pandas 3.1.0, numpy 2.5.4 e pyarrow 26.0.0, todos saltos
+# de versao maior. A solucao completa e um lockfile (`pip freeze` num
+# requirements.lock), que e trabalho maior e merece commit proprio.
+
 requests
 python-dotenv
 google-cloud-bigquery
 google-cloud-storage
-dbt-bigquery
+
+dbt-core==1.12.0
+dbt-bigquery==1.12.0
