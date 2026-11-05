@@ -1,38 +1,44 @@
 """
-Sonda 2: os endpoints GMS (GMV Max) existem e respondem para a nossa loja?
+Sonda GMS: os endpoints de GMV Max enumeram campanha sozinhos?
 
-HISTORICO, porque a segunda versao deste arquivo existe por erro meu.
+A PERGUNTA, e por que ela vale mais que todas as anteriores.
 
-Sonda 1 (03/11/2026) provou:
-  - `get_product_level_campaign_id_list` aceita SO [all, auto, manual]. A
-    propria API devolveu a lista no error_param. Nenhum alcanca GMV Max, e
-    `all` traz as mesmas 25 campanhas que `manual`.
-  - `get_gms_campaign_id_list` devolve error_not_found -- nao existe. Chute meu.
-  - Conciliacao direto na API: loja R$ 110,13 x campanhas R$ 89,15 = R$ 20,98.
+Em 04/11/2026 a loja tem SEIS campanhas ativas, cinco delas multi-produto
+("Lancamentos 1" a "5"), e o Bruno vai criar mais -- a otimizacao e viva. O
+`get_product_level_campaign_id_list` nao enumera nenhuma das cinco: aceita so
+`ad_type` in [all, auto, manual] e devolve 25 campanhas antigas.
 
-Primeira rodada da sonda 2 (03/11/2026) bateu em `ads_rate_limit_total_api`
-em tres dos quatro caminhos. Eu tinha copiado do get_ads.py tudo menos a parte
-que importava: a retentativa com espera progressiva. Esta versao corrige isso
-e, de quebra, gasta MENOS chamadas -- a etapa 2 so roda para o caminho que a
-etapa 1 ja provou existir, e so no formato de data que funcionar.
+A saida que eu tinha escrito -- cadastrar id a mao num CSV -- nasceu
+desatualizada: fiz para UMA campanha e ja sao cinco. Nao escala, e o proprio
+Bruno disse isso antes de mim.
 
-O unico resultado limpo da primeira rodada vale ouro e esta preservado aqui:
-`check_create_gms_product_campaign_eligibility` respondeu SEM ERRO. O modulo
-GMS existe neste host e o nosso app tem permissao nele. O que falta e achar a
-forma de enumerar e ler campanha.
+A documentacao diz que `campaign_id` e OPCIONAL nos dois endpoints GMS. Se
+omitir e vier tudo, acabou: descoberta automatica, nenhuma lista a mao, e o
+nivel de item de brinde. Se exigir o id, voltamos ao cadastro manual sabendo
+que e o unico caminho, e nao por falta de ter perguntado.
 
-COMO LER A RESPOSTA -- o codigo de erro diz em que degrau paramos:
+O QUE JA SABEMOS, para nao perguntar de novo:
 
-  error_not_found      -> o caminho nao existe. Nome errado.
-  error_auth/permission/sign
-                       -> o caminho EXISTE, o app nao tem permissao.
-  error_param          -> existe E temos permissao, so o parametro esta errado.
-                          MELHOR NOTICIA POSSIVEL: foi assim que destravamos o
-                          Brand Portal em outubro.
-  rate limit           -> nao diz nada sobre o caminho. Espera e tenta de novo.
-  sem erro             -> dado na mao.
+  - `get_product_campaign_daily_performance` SERVE o id 117615261 quando a
+    gente passa na mao: 34 dias, R$ 38,46, ad_type=manual.
+  - `get_product_level_campaign_setting_info` RECUSA o mesmo id:
+    "auto & manual product ad types only". Os dois discordam.
+  - `check_create_gms_product_campaign_eligibility` respondeu SEM ERRO, entao
+    o modulo GMS existe neste host e o app tem permissao nele.
+  - Nao existe `get_gms_campaign_id_list` (error_not_found).
 
-SO LE. Nenhum create_ ou edit_ do modulo GMS entra aqui, de proposito.
+DOIS BUGS MEUS QUE ESTA VERSAO CORRIGE:
+
+  1. A doc diz POST para os dois endpoints GMS. A versao anterior usava GET.
+     No padrao da Shopee os parametros de AUTENTICACAO vao na query string e os
+     de NEGOCIO vao no corpo JSON -- mesmo formato que o token_manager ja usa
+     para renovar token.
+  2. Faltava retentativa de rate limit. Foi o que matou a rodada de 03/11.
+
+FORMATO DE DATA: DD-MM-YYYY, como o resto do modulo de Ads. A doc mostra
+"11-11-2025" no exemplo, o que confirma.
+
+SO LE. Nenhum create_ ou edit_ entra aqui. Gasta no maximo 4 chamadas.
 
 Uso:
     cd ~/Documents/"Casa e Patas"/data-pipeline
@@ -60,10 +66,12 @@ PARTNER_ID = int(os.getenv("SHOPEE_PARTNER_ID", "").strip())
 PARTNER_KEY = os.getenv("SHOPEE_PARTNER_KEY", "").strip()
 API_HOST = "https://partner.shopeemobile.com"
 
+FMT_ADS = "%d-%m-%Y"
 PAUSA_SEG = 2.0
 
-# Tres codigos ja observados em producao. O terceiro apareceu em 03/11/2026,
-# na primeira rodada desta sonda, e nao estava em lugar nenhum do projeto.
+# Campanha conhecida, usada so se a enumeracao falhar.
+ID_CONHECIDO = 117615261
+
 ERROS_RATE_LIMIT = (
     "error_rate_limit",
     "ads.rate_limit.exceed_api",
@@ -73,18 +81,8 @@ TENTATIVAS = 4
 ESPERA_INICIAL = 10.0
 ESPERA_MAX = 90.0
 
-# Somente leitura. Os create_/edit_ do modulo GMS existem e ficam de fora.
-CAMINHOS_LEITURA = [
-    "/api/v2/ads/get_gms_campaign_performance",
-    "/api/v2/ads/get_gms_item_performance",
-    "/api/v2/ads/list_gms_user_deleted_item",
-    "/api/v2/ads/check_create_gms_product_campaign_eligibility",
-]
-
-# Product Ads usa DD-MM-YYYY. Nao ha garantia de que GMS use o mesmo, e errar
-# o formato na Shopee as vezes devolve VAZIO em vez de erro -- falha silenciosa
-# que ja custou uma exploracao inteira em setembro.
-FORMATOS_DATA = [("DD-MM-YYYY", "%d-%m-%Y"), ("YYYY-MM-DD", "%Y-%m-%d")]
+CAMPANHA = "/api/v2/ads/get_gms_campaign_performance"
+ITEM = "/api/v2/ads/get_gms_item_performance"
 
 
 def generate_sign(path: str, ts: int, token: str, shop: int) -> str:
@@ -93,40 +91,34 @@ def generate_sign(path: str, ts: int, token: str, shop: int) -> str:
                     hashlib.sha256).hexdigest()
 
 
-def chamar(path: str, extra: dict) -> dict:
+def chamar(path: str, corpo: dict) -> dict:
     """
-    Devolve o JSON cru -- aqui o erro E o resultado -- mas retenta em rate
-    limit. O sign e refeito a cada tentativa: o timestamp entra na assinatura,
-    e reusar os params depois de dormir 90 s trocaria o erro de rate limit por
-    um erro de assinatura, mais dificil de diagnosticar que o original.
+    POST: autenticacao na query string, negocio no corpo JSON.
+
+    E o mesmo formato que o `_refresh_access_token` do token_manager usa --
+    partner_id/timestamp/sign na URL, o resto no body. A assinatura NAO inclui
+    o corpo, so partner_id + path + timestamp + token + shop_id.
     """
     espera = ESPERA_INICIAL
 
     for tentativa in range(1, TENTATIVAS + 1):
         token, shop = get_valid_access_token()
         ts = int(time.time())
-        params = {
-            "partner_id": PARTNER_ID,
-            "timestamp": ts,
-            "sign": generate_sign(path, ts, token, shop),
-            "access_token": token,
-            "shop_id": shop,
-            **extra,
-        }
+        url = (f"{API_HOST}{path}"
+               f"?partner_id={PARTNER_ID}&timestamp={ts}"
+               f"&access_token={token}&shop_id={shop}"
+               f"&sign={generate_sign(path, ts, token, shop)}")
         try:
-            dados = requests.get(f"{API_HOST}{path}", params=params,
-                                 timeout=45).json()
+            dados = requests.post(url, json=corpo, timeout=45).json()
         except Exception as e:                  # noqa: BLE001
             return {"error": "falha_local", "message": str(e)}
 
-        erro = dados.get("error") or ""
-        if erro not in ERROS_RATE_LIMIT:
+        if (dados.get("error") or "") not in ERROS_RATE_LIMIT:
             return dados
-
         if tentativa == TENTATIVAS:
             return dados
 
-        print(f"      rate limit ({tentativa}/{TENTATIVAS}); "
+        print(f"    rate limit ({tentativa}/{TENTATIVAS}); "
               f"aguardando {espera:.0f}s.", flush=True)
         time.sleep(espera)
         espera = min(espera * 2, ESPERA_MAX)
@@ -134,31 +126,16 @@ def chamar(path: str, extra: dict) -> dict:
     return dados
 
 
-def classificar(dados: dict) -> str:
-    erro = dados.get("error") or ""
-    if not erro:
-        return "OK"
-    if erro in ERROS_RATE_LIMIT:
-        return "RATE LIMIT (nada se conclui)"
-    if "not_found" in erro:
-        return "NAO EXISTE"
-    if "param" in erro:
-        return "EXISTE + PERMITIDO (so o parametro esta errado)"
-    if any(t in erro for t in ("auth", "permission", "sign", "token")):
-        return "EXISTE, SEM PERMISSAO"
-    return f"outro ({erro})"
-
-
-def mostrar(dados: dict, limite: int = 1200) -> None:
+def mostrar(rotulo: str, dados: dict, limite: int = 2500) -> None:
+    print(f"  --- {rotulo} ---")
     if dados.get("error"):
-        print(f"      {dados['error']}: {dados.get('message', '')}")
+        print(f"  {dados['error']}: {dados.get('message', '')}")
         return
     texto = json.dumps(dados.get("response"), ensure_ascii=False, indent=2)
-    print("      resposta:")
     for linha in texto[:limite].splitlines():
-        print(f"        {linha}")
+        print(f"    {linha}")
     if len(texto) > limite:
-        print("        ...")
+        print("    ... (cortado)")
 
 
 if __name__ == "__main__":
@@ -166,62 +143,47 @@ if __name__ == "__main__":
         inicio = date.fromisoformat(sys.argv[1])
         fim = date.fromisoformat(sys.argv[2])
     else:
-        inicio = date(2026, 10, 1)
         fim = datetime.now().date() - timedelta(days=1)
+        inicio = fim - timedelta(days=13)      # 14 dias, dentro do limite de 3 meses
 
-    print(f"Sonda GMS — periodo {inicio} a {fim}\n")
+    janela = {"start_date": inicio.strftime(FMT_ADS),
+              "end_date": fim.strftime(FMT_ADS)}
 
-    # ------------------------------------------------ 1. os caminhos existem?
-    print("[1/2] Os caminhos existem? (chamada minima, so para ler o codigo)")
-    vivos, limitados = [], []
+    print(f"Sonda GMS — {inicio} a {fim} (POST, datas em DD-MM-YYYY)\n")
 
-    for path in CAMINHOS_LEITURA:
-        curto = path.rsplit("/", 1)[-1]
-        print(f"  {curto}")
-        dados = chamar(path, {})
-        veredito = classificar(dados)
-        print(f"      -> {veredito}")
-        mostrar(dados)
+    # ------------------------------------------------ 1. enumera campanha?
+    print("[1/3] get_gms_campaign_performance SEM campaign_id")
+    print("      (a pergunta que decide: ele lista as campanhas sozinho?)")
+    camp = chamar(CAMPANHA, dict(janela))
+    mostrar("campanha, sem id", camp)
+    time.sleep(PAUSA_SEG)
 
-        if veredito.startswith("RATE LIMIT"):
-            limitados.append(curto)
-        elif veredito != "NAO EXISTE":
-            vivos.append(path)
+    # ------------------------------------------------ 2. enumera item?
+    print("\n[2/3] get_gms_item_performance SEM campaign_id")
+    print("      (e o print 'Desempenho do Produto' do Seller Centre)")
+    itens = chamar(ITEM, dict(janela, offset=0, limit=100))
+    mostrar("item, sem id", itens)
+    time.sleep(PAUSA_SEG)
 
-        time.sleep(PAUSA_SEG)
+    # ------------------------------------- 3. so se os dois acima falharem
+    precisa_id = bool(camp.get("error")) and bool(itens.get("error"))
+    if precisa_id:
+        print(f"\n[3/3] Os dois recusaram sem id. Tentando com "
+              f"campaign_id={ID_CONHECIDO}")
+        print("      (se funcionar, o id e obrigatorio e o cadastro manual")
+        print("       passa a ser o unico caminho conhecido)")
+        com_id = chamar(CAMPANHA, dict(janela, campaign_id=ID_CONHECIDO))
+        mostrar(f"campanha, id={ID_CONHECIDO}", com_id)
+    else:
+        print("\n[3/3] Pulado: pelo menos um dos dois respondeu sem id.")
 
-    if limitados:
-        print(f"\n  Ainda limitados: {', '.join(limitados)}")
-        print("  O `ads_rate_limit_total_api` parece ser cota TOTAL do modulo,")
-        print("  nao por endpoint. Se persistir, rode amanha -- e nao rode nada")
-        print("  de Ads hoje, para nao disputar cota com a rodada das 06:00.")
-
-    alvo = "/api/v2/ads/get_gms_campaign_performance"
-    if alvo not in vivos:
-        print(f"\n[2/2] {alvo.rsplit('/', 1)[-1]} nao respondeu limpo. Paro aqui")
-        print("  em vez de gastar cota tentando parametro no escuro.")
-        sys.exit(0)
-
-    # --------------------------------------- 2. performance, com data de verdade
-    print("\n[2/2] Performance por campanha")
-
-    for rotulo, fmt in FORMATOS_DATA:
-        print(f"  --- formato {rotulo} ---")
-        dados = chamar(alvo, {
-            "start_date": inicio.strftime(fmt),
-            "end_date": fim.strftime(fmt),
-        })
-        mostrar(dados)
-
-        if not dados.get("error"):
-            print("\n  Procure por 'Lancamentos 1' e pelo gasto de R$ 8,49 em out.")
-            break   # achou o formato certo; nao gasta cota no outro
-
-        if "param" in (dados.get("error") or ""):
-            print("      (mensagem de parametro = o caminho e nosso. Se pedir")
-            print("       campaign_id_list, nao temos de onde tirar: nao existe")
-            print("       get_gms_campaign_id_list. Ai vira pergunta a Shopee.)")
-
-        time.sleep(PAUSA_SEG)
-
+    print("\n=== o que procurar na saida ===")
+    print("  Vieram VARIAS campanhas/itens sem passar id -> descoberta")
+    print("    automatica. Nenhuma lista a mao, e o nivel de item resolve o")
+    print("    'quais anuncios pausar dentro da campanha'.")
+    print("  Veio UMA so, ou erro pedindo campaign_id -> o id e obrigatorio;")
+    print("    o cadastro manual vira o unico caminho e a gente assume isso")
+    print("    de olhos abertos.")
+    print("  error_not_whitelisted_for_product_gms -> a loja nao esta liberada")
+    print("    no modulo; vira pedido a Shopee, nao conserto de codigo.")
     print("\nFim. Me manda a saida inteira.")

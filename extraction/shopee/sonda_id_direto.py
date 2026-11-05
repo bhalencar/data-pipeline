@@ -1,44 +1,57 @@
 """
 Sonda 3: o endpoint de PERFORMANCE serve um id que a LISTAGEM nao devolve?
 
-A PERGUNTA, e por que ela e boa. Em 03/11/2026 provei que
-`get_product_level_campaign_id_list` nao enumera campanha GMV Max -- a propria
-API devolveu "ad_type: value must be in list [ all auto manual]". Dai eu
-concluí que a familia Product Ads inteira estava fechada para GMV Max, e
-parti para o modulo GMS.
+O QUE JA ESTA RESPONDIDO, e nao precisa ser perguntado de novo.
 
-Foi salto meu. Listagem e performance sao endpoints DIFERENTES. A restricao
-que provei e da listagem. Se `get_product_campaign_daily_performance` aceitar
-o id da campanha GMV Max, o conserto inteiro vira uma seed de ids avulsos e o
-`master_ads` nao muda uma linha -- com grao diario e com `ad_name` trazendo o
-nome de campanha que o Bruno quer.
+A primeira rodada desta sonda (04/11/2026) morreu na etapa 1 por erro meu --
+janela de 34 dias contra um limite de 30 -- mas a etapa 2 respondeu sozinha:
 
-O DESENHO EXPERIMENTAL, que e o ponto deste arquivo. A API de Ads deste
-projeto tem um modo de falha documentado: formato de data errado devolve
-VAZIO em vez de erro. Entao pedir so o id novo e receber vazio nao prova
-nada -- pode ser id nao servido, pode ser erro meu de parametro.
+    get_product_level_campaign_setting_info
+    -> error_param: campaign_id_list: has invalid campaignIDs([117615261]),
+       please pass campaign ids of auto & manual product ad types only
 
-Por isso a sonda manda OS DOIS IDS NA MESMA CHAMADA:
+A Shopee diz com todas as letras que a campanha "Lancamentos 1" NAO e do tipo
+auto nem manual. O endpoint de setting a recusa POR TIPO. Como e dele que o
+`master_ads` puxa item_id, status, orcamento e meta_roas, essas colunas viriam
+nulas mesmo se a performance funcionasse.
 
-  CONTROLE  116939634  campanha que ja esta no master_ads e sabemos que responde
-  TESTE     <o id que voce passar>
+Por isso a etapa de setting saiu desta versao: a resposta ja esta acima e
+repetir a chamada so gasta cota.
 
-  Voltam os dois  -> o id e servido. Conserto trivial.
-  Volta so o controle -> o id nao e servido. Prova limpa: mesma chamada,
-                         mesmo formato, mesma autenticacao.
-  Nao volta nenhum -> erro meu de parametro. Nada se conclui sobre o id.
+O QUE AINDA NAO ESTA RESPONDIDO, e e so isto:
 
-A terceira linha e o motivo de existir o controle. Sem ele, esse caso seria
-confundido com o segundo.
+    `get_product_campaign_daily_performance` serve esse id, ou recusa igual?
 
-Uso -- pegue o campaign_id na URL do Seller Centre ao abrir a campanha:
+Se servir, o gasto diario e o `ad_name` entram no master_ads via seed de ids
+avulsos, e so as colunas de configuracao ficam nulas -- o left join ja e de
+proposito, e perder o SKU e muito melhor que perder o gasto. Se recusar, a
+familia Product Ads esta fechada e o caminho e o modulo GMS.
 
+O DESENHO EXPERIMENTAL continua o mesmo, e e o ponto do arquivo: os DOIS ids
+vao na MESMA chamada.
+
+  CONTROLE  116939634  ja esta no master_ads, sabemos que responde
+  TESTE     117615261  "Lancamentos 1"
+
+  Voltam os dois       -> o id e servido.
+  Volta so o controle  -> nao e servido. Prova limpa: mesma chamada, mesmo
+                          formato de data, mesma autenticacao.
+  Nao volta nenhum     -> erro meu. Nada se conclui.
+
+A terceira linha e o motivo de existir o controle -- e foi exatamente o que
+aconteceu na rodada passada.
+
+O QUE MUDOU NESTA VERSAO. Fatiamento de 30 dias, copiado do `fatiar()` do
+get_ads.py. A janela de 34 dias devolveu
+`ads.performance.error_date_range_too_long` e derrubou a etapa inteira.
+
+SO LE. Gasta 2 chamadas.
+
+Uso:
     cd ~/Documents/"Casa e Patas"/data-pipeline
     source ~/.venvs/cp-bigquery/bin/activate
     export TOKEN_BUCKET=cp-pipeline-tokens
-    python extraction/shopee/sonda_id_direto.py 123456789
-
-Gasta 4 chamadas no total. SO LE.
+    python extraction/shopee/sonda_id_direto.py 117615261
 """
 
 import hashlib
@@ -60,10 +73,9 @@ PARTNER_KEY = os.getenv("SHOPEE_PARTNER_KEY", "").strip()
 API_HOST = "https://partner.shopeemobile.com"
 
 FMT_ADS = "%d-%m-%Y"
+MAX_DIAS = 30          # medido: 31 dias falha. Mesmo limite do get_ads.py.
 PAUSA_SEG = 2.0
 
-# Campanha que ja esta no master_ads com gasto conhecido: R$ 62,84 em out/26.
-# E o controle do experimento.
 ID_CONTROLE = 116939634
 
 ERROS_RATE_LIMIT = (
@@ -116,6 +128,16 @@ def chamar(path: str, extra: dict) -> dict:
     return dados
 
 
+def fatiar(inicio: date, fim: date, max_dias: int = MAX_DIAS) -> list:
+    """Quebra [inicio, fim] em fatias de no maximo max_dias INCLUSIVOS."""
+    fatias, cursor = [], inicio
+    while cursor <= fim:
+        fim_fatia = min(cursor + timedelta(days=max_dias - 1), fim)
+        fatias.append((cursor, fim_fatia))
+        cursor = fim_fatia + timedelta(days=1)
+    return fatias
+
+
 def lista_da_resposta(dados: dict) -> list:
     resposta = dados.get("response") or []
     if isinstance(resposta, dict):
@@ -123,29 +145,10 @@ def lista_da_resposta(dados: dict) -> list:
     return [r for r in resposta if isinstance(r, dict)]
 
 
-def veredito(devolvidos: set, teste: int) -> None:
-    tem_controle = ID_CONTROLE in devolvidos
-    tem_teste = teste in devolvidos
-
-    print()
-    if tem_controle and tem_teste:
-        print("  >>> O ID E SERVIDO. O endpoint de performance aceita a campanha")
-        print("      GMV Max mesmo ela nao saindo na listagem. O conserto e uma")
-        print("      seed de ids avulsos no get_campaign_ids(); master_ads nao muda.")
-    elif tem_controle and not tem_teste:
-        print("  >>> O ID NAO E SERVIDO. Prova limpa: mesma chamada, mesmo")
-        print("      formato de data, mesma autenticacao, e so o controle voltou.")
-        print("      O caminho volta a ser a familia GMS (get_gms_campaign_performance).")
-    elif not tem_controle:
-        print("  >>> INCONCLUSIVO. Nem o controle voltou, entao errei algum")
-        print("      parametro. Nada se conclui sobre o id de teste.")
-
-
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit("Falta o campaign_id a testar.\n"
-                 "  python extraction/shopee/sonda_id_direto.py 123456789\n"
-                 "O id esta na URL do Seller Centre ao abrir a campanha.")
+                 "  python extraction/shopee/sonda_id_direto.py 117615261")
 
     try:
         id_teste = int(sys.argv[1])
@@ -158,67 +161,74 @@ if __name__ == "__main__":
     fim = datetime.now().date() - timedelta(days=1)
     inicio = date(2026, 10, 1)
     ids = [ID_CONTROLE, id_teste]
+    fatias = fatiar(inicio, fim)
 
-    print(f"Sonda de id direto — {inicio} a {fim}")
+    print(f"Sonda de id direto — {inicio} a {fim} "
+          f"({(fim - inicio).days + 1} dias, {len(fatias)} fatia(s))")
     print(f"  controle: {ID_CONTROLE}   teste: {id_teste}\n")
 
-    # --------------------------------------------- 1. performance diaria
-    print("[1/2] get_product_campaign_daily_performance, os dois ids juntos")
-    dados = chamar("/api/v2/ads/get_product_campaign_daily_performance", {
-        "start_date": inicio.strftime(FMT_ADS),
-        "end_date": fim.strftime(FMT_ADS),
-        "campaign_id_list": ",".join(str(i) for i in ids),
-    })
+    path = "/api/v2/ads/get_product_campaign_daily_performance"
+    gastos, dias, nomes, tipos = {}, {}, {}, {}
+    houve_erro = False
 
-    if dados.get("error"):
-        print(f"  {dados['error']}: {dados.get('message', '')}")
-        devolvidos = set()
-    else:
-        devolvidos = set()
-        for camp in lista_da_resposta(dados):
+    for a, b in fatias:
+        print(f"[fatia {a} a {b}]")
+        dados = chamar(path, {
+            "start_date": a.strftime(FMT_ADS),
+            "end_date": b.strftime(FMT_ADS),
+            "campaign_id_list": ",".join(str(i) for i in ids),
+        })
+
+        if dados.get("error"):
+            houve_erro = True
+            print(f"  {dados['error']}: {dados.get('message', '')}")
+            time.sleep(PAUSA_SEG)
+            continue
+
+        campanhas = lista_da_resposta(dados)
+        if not campanhas:
+            print("  resposta sem nenhuma campanha (o vazio silencioso).")
+
+        for camp in campanhas:
             cid = camp.get("campaign_id")
-            devolvidos.add(cid)
-            gasto = sum(float(m.get("expense") or 0)
-                        for m in camp.get("metrics_list") or [])
-            dias = len(camp.get("metrics_list") or [])
-            marca = "CONTROLE" if cid == ID_CONTROLE else "TESTE   "
-            print(f"  {marca} {cid}  R$ {gasto:>8.2f} em {dias} dia(s)")
-            print(f"           ad_type={camp.get('ad_type')}  "
-                  f"ad_name={camp.get('ad_name')}")
+            metricas = camp.get("metrics_list") or []
+            gastos[cid] = gastos.get(cid, 0.0) + sum(
+                float(m.get("expense") or 0) for m in metricas)
+            dias[cid] = dias.get(cid, 0) + len(metricas)
+            nomes[cid] = camp.get("ad_name")
+            tipos[cid] = camp.get("ad_type")
+            print(f"  devolveu {cid}  ({len(metricas)} dia(s))")
 
-        if not devolvidos:
-            print("  Resposta sem nenhuma campanha -- o vazio silencioso.")
+        time.sleep(PAUSA_SEG)
 
-    veredito(devolvidos, id_teste)
+    print("\n--- consolidado ---")
+    for cid in ids:
+        marca = "CONTROLE" if cid == ID_CONTROLE else "TESTE   "
+        if cid in gastos:
+            print(f"  {marca} {cid}  R$ {gastos[cid]:>8.2f} em {dias[cid]} dia(s)")
+            print(f"           ad_type={tipos[cid]}  ad_name={nomes[cid]}")
+        else:
+            print(f"  {marca} {cid}  NAO VEIO NA RESPOSTA")
 
-    # --------------------------------------------- 2. setting (item, status)
-    # O master_ads faz left join com o setting para trazer item_id, status,
-    # orcamento e meta_roas. Se o id passar na performance e nao no setting,
-    # a linha entra com essas colunas nulas -- melhor saber agora.
-    print("\n[2/2] get_product_level_campaign_setting_info, os dois ids juntos")
-    time.sleep(PAUSA_SEG)
-    dados = chamar("/api/v2/ads/get_product_level_campaign_setting_info", {
-        "campaign_id_list": ",".join(str(i) for i in ids),
-        "info_type_list": "1,2,3",
-    })
+    tem_controle = ID_CONTROLE in gastos
+    tem_teste = id_teste in gastos
 
-    if dados.get("error"):
-        print(f"  {dados['error']}: {dados.get('message', '')}")
+    print()
+    if tem_controle and tem_teste:
+        print("  >>> O ID E SERVIDO pela performance. O conserto e uma seed de")
+        print("      ids avulsos no get_campaign_ids(). As colunas de")
+        print("      configuracao (item_id, status, orcamento, meta_roas) vao")
+        print("      ficar NULAS, porque o setting recusa o id por tipo -- e")
+        print("      isso e aceitavel: o left join existe para nao perder gasto.")
+    elif tem_controle and not tem_teste:
+        print("  >>> O ID NAO E SERVIDO. Prova limpa: mesma chamada, mesma")
+        print("      janela, mesma autenticacao, e so o controle voltou.")
+        print("      A familia Product Ads esta fechada para esta campanha.")
+        print("      Caminho: modulo GMS (get_gms_campaign_performance).")
+    elif not tem_controle and houve_erro:
+        print("  >>> INCONCLUSIVO: houve erro de API e nem o controle voltou.")
+        print("      Nada se conclui sobre o id de teste.")
     else:
-        vistos = set()
-        for camp in lista_da_resposta(dados):
-            cid = camp.get("campaign_id")
-            vistos.add(cid)
-            comum = camp.get("common_info") or {}
-            marca = "CONTROLE" if cid == ID_CONTROLE else "TESTE   "
-            print(f"  {marca} {cid}  ad_name={comum.get('ad_name')}  "
-                  f"status={comum.get('campaign_status')}")
-            print(f"           item_id_list={comum.get('item_id_list')}")
-        if id_teste in vistos:
-            print("\n  Setting tambem responde: o left join do master_ads fica completo.")
-        elif ID_CONTROLE in vistos:
-            print("\n  Setting NAO responde para o id de teste: a linha entraria com")
-            print("  item_id, status, orcamento e meta_roas nulos. O gasto entra")
-            print("  igual -- o left join e de proposito -- mas vale saber.")
+        print("  >>> INCONCLUSIVO: nem o controle voltou, sem erro aparente.")
 
     print("\nFim. Me manda a saida inteira.")

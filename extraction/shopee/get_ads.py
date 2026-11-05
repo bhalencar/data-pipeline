@@ -44,6 +44,7 @@ de atribuicao depois do fato, porque `broad_*` credita conversao numa janela
 de 7 dias a partir do clique.
 """
 
+import csv
 import hashlib
 import hmac
 import json
@@ -218,6 +219,72 @@ def get_campaign_ids() -> list:
     return ids
 
 
+def carregar_campanhas_extras(ja_listadas: list) -> list:
+    """
+    Campanhas que a listagem da Shopee NAO devolve, cadastradas a mao.
+
+    POR QUE ISTO EXISTE. Em 30/10/2026 a loja passou a gastar numa campanha
+    que o `get_product_level_campaign_id_list` nao enumera: ele aceita apenas
+    `ad_type` in [all, auto, manual] -- a propria API devolve essa lista no
+    error_param -- e a campanha "Lancamentos 1" (multi-produto) nao cai em
+    nenhum deles. Resultado: R$ 39,18 de gasto sem campanha atribuida em cinco
+    dias, invisivel ate alguem conferir a mao contra a plataforma.
+
+    O que FOI MEDIDO em 04/11/2026, mandando o id novo junto com um id
+    conhecido na mesma chamada:
+
+      get_product_campaign_daily_performance  -> SERVE o id normalmente,
+          34 dias de metrica, R$ 38,46, e ainda devolve ad_type=manual.
+      get_product_level_campaign_setting_info -> RECUSA, com
+          "please pass campaign ids of auto & manual product ad types only".
+
+    Os dois endpoints discordam sobre o tipo da mesma campanha. E inconsistencia
+    da Shopee, nao nossa, e e por isso que a lista extra entra SO na chamada de
+    performance -- ver o bloco principal.
+
+    COMO CADASTRAR UMA NOVA. Abra a campanha no Seller Centre e pegue o id da
+    URL (.../pas/product/manual-mpd/<id>). Acrescente uma linha no
+    `campanhas_extras.csv`. Quem avisa que falta cadastrar e o teste dbt
+    `assert_ads_conciliacao_loja_campanha`, que compara o nivel loja com a soma
+    das campanhas.
+
+    Falha de leitura aqui NAO derruba a extracao: sem o arquivo seguimos com a
+    lista da API, que e o comportamento de antes. Perder a campanha extra e
+    ruim; perder a rodada inteira por causa de um CSV e pior.
+    """
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "campanhas_extras.csv")
+    extras = []
+
+    try:
+        with open(caminho, encoding="utf-8", newline="") as f:
+            for linha in csv.DictReader(f):
+                bruto = (linha.get("campaign_id") or "").strip()
+                if not bruto:
+                    continue
+                try:
+                    cid = int(bruto)
+                except ValueError:
+                    print(f"  AVISO: campaign_id invalido no CSV: {bruto!r}")
+                    continue
+                if cid in ja_listadas:
+                    # A Shopee passou a enumerar sozinha. Nao e erro -- e a
+                    # deixa para tirar a linha do CSV.
+                    print(f"  {cid} ja vem na listagem da API; linha do CSV "
+                          f"virou redundante.")
+                    continue
+                extras.append(cid)
+    except FileNotFoundError:
+        print("  campanhas_extras.csv nao encontrado; seguindo so com a API.")
+        return []
+    except Exception as e:                      # noqa: BLE001
+        print(f"  AVISO: falha ao ler campanhas_extras.csv ({e}); "
+              f"seguindo so com a API.")
+        return []
+
+    return extras
+
+
 def get_campaign_daily(ids: list, inicio: date, fim: date) -> list:
     """
     Performance por campanha x dia.
@@ -321,21 +388,59 @@ if __name__ == "__main__":
     salvar("get_ads_shop_daily", shop, fim)
 
     print("\n[2/3] Campanhas")
-    ids = get_campaign_ids()
-    print(f"  {len(ids)} campanha(s) na loja.")
+    ids_listados = get_campaign_ids()
+    print(f"  {len(ids_listados)} campanha(s) na listagem da API.")
 
-    if ids:
-        campanhas = get_campaign_daily(ids, inicio, fim)
+    ids_extras = carregar_campanhas_extras(ids_listados)
+    if ids_extras:
+        print(f"  {len(ids_extras)} campanha(s) extra(s) do campanhas_extras.csv: "
+              f"{', '.join(str(i) for i in ids_extras)}")
+
+    # DUAS LISTAS, DE PROPOSITO, E A DIFERENCA NAO E COSMETICA.
+    #
+    # A performance aceita os ids extras; o setting NAO -- ele responde
+    # `error_param: please pass campaign ids of auto & manual product ad types
+    # only`. E `chamar()` levanta RuntimeError em error_param, porque erro de
+    # parametro nao melhora com retentativa.
+    #
+    # Mandar a lista completa para o setting derrubaria a etapa de Ads inteira
+    # e, com ela, o `dbt build` da rodada. O conserto da campanha ausente teria
+    # trocado um gasto invisivel por um pipeline quebrado todo dia.
+    ids_performance = ids_listados + ids_extras
+
+    campanhas = []
+    if ids_performance:
+        campanhas = get_campaign_daily(ids_performance, inicio, fim)
         salvar("get_ads_campaign_daily", campanhas, fim)
+    else:
+        print("  Nenhuma campanha. Nada a salvar na performance.")
 
-        settings = get_campaign_settings(ids)
+    if ids_listados:
+        settings = get_campaign_settings(ids_listados)
         salvar("get_ads_campaign_setting", settings, fim)
     else:
-        print("  Nenhuma campanha. Nada a salvar nos dois arquivos de campanha.")
+        print("  Nenhuma campanha listada. Nada a salvar no setting.")
 
     print("\n[3/3] Conferencia")
     total_loja = round(sum(float(d.get("expense") or 0) for d in shop), 2)
     print(f"  Gasto no periodo (nivel loja): R$ {total_loja:.2f}")
+
+    # Conciliacao na propria extracao. O docstring deste arquivo afirmava que
+    # loja e campanhas batiam e que a separacao era "seguranca contra dupla
+    # contagem, nao reconciliacao". Isso deixou de ser verdade em 30/10/2026 e
+    # ninguem viu por cinco dias. Agora a rodada diz o numero em voz alta.
+    # O detector automatico e o teste dbt assert_ads_conciliacao_loja_campanha;
+    # isto aqui e o aviso antecipado, visivel no log do Cloud Run.
+    total_campanhas = round(sum(
+        float(linha.get("expense") or 0) for linha in campanhas
+    ), 2)
+    diferenca = round(total_loja - total_campanhas, 2)
+    print(f"  Gasto no periodo (soma das campanhas): R$ {total_campanhas:.2f}")
+    print(f"  Diferenca: R$ {diferenca:.2f}")
+    if abs(diferenca) > 1.00:
+        print("  ATENCAO: diferenca acima de R$ 1,00. Provavel campanha que a "
+              "listagem nao devolve.\n  Pegue o id na URL do Seller Centre e "
+              "cadastre em extraction/shopee/campanhas_extras.csv.")
     print(f"  Dias com gasto zero: {sum(1 for d in shop if not d.get('expense'))} de {len(shop)}")
     print("\n  Dia zerado e normal com a midia pausada -- a Shopee devolve a linha "
           "mesmo assim.\n  Dia AUSENTE, nao. Se o total de dias for menor que o "
