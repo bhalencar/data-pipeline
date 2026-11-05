@@ -295,37 +295,75 @@ models:
           - not_null
 
       - name: nome_anuncio
-        description: "Nome da campanha como aparece no painel de Ads. Vem da performance, nao da configuracao, entao reflete o nome vigente no periodo."
+        description: >
+          Formato: <titulo de UM produto> [rotulo]. Em campanha EM GRUPO o
+          colchete traz o nome dado pelo vendedor -- [Lancamentos 2] -- e o
+          titulo antes dele nomeia UM item do grupo, escolhido pela Shopee e
+          NAO proporcional ao gasto: medido em 05/11/2026, a Lancamentos 2 vem
+          rotulada com o Suporte para Doces, que gastou 0,85 de 18,87. Ler a
+          linha como gasto daquele produto erra por 20 vezes. Em campanha
+          individual o colchete e um numero de desambiguacao ([2], [4]) ou nao
+          existe. O campo MUDA no tempo -- vem da performance e reflete o
+          titulo vigente na consulta, entao reescrever o anuncio renomeia a
+          campanha inclusive no historico. Para identificar use campaign_id.
 
       - name: tipo_anuncio
-        description: "manual, auto ou gms. Auto Product Ads esta sendo depreciado pela Shopee."
+        description: >
+          manual, auto ou gms. NAO DISTINGUE ANUNCIO EM GRUPO DE INDIVIDUAL:
+          medido em 05/11/2026, as campanhas em grupo voltam como 'manual' por
+          este endpoint, enquanto o endpoint de setting recusa os mesmos ids
+          dizendo aceitar apenas auto e manual -- os dois discordam sobre o
+          tipo da mesma campanha. Para separar os dois mundos use
+          qtd_itens is null. Auto Product Ads esta sendo depreciado.
 
       - name: posicionamento
         description: "Onde o anuncio aparece. 'all' e o padrao das campanhas da loja."
 
       - name: item_id
         description: >
-          Produto anunciado, para ligar gasto de midia a SKU. NULO quando a
-          campanha nao aparece mais na listagem da Shopee -- campanha encerrada
-          some, e o gasto historico dela fica aqui sem item. Nulo aqui e
-          esperado, nao defeito.
+          Produto anunciado, para ligar gasto de midia a SKU. DUAS CAUSAS DE
+          NULO, as duas esperadas. (1) Campanha de ANUNCIO EM GRUPO: o endpoint
+          de setting recusa esses ids com "auto & manual product ad types
+          only", entao nao ha linha para o left join -- 150 de 150 linhas das 5
+          campanhas em grupo, medido em 05/11/2026. Ali nao existe item unico:
+          a campanha anuncia varios produtos e a API nao reparte o gasto entre
+          eles, a quebra por produto existe so na tela do Seller Centre.
+          (2) Campanha encerrada que saiu da listagem: o gasto historico fica
+          sem item. Nulo aqui nunca e falha de extracao.
 
       - name: qtd_itens
         description: >
-          Quantos produtos a campanha anuncia. Em 02/09/2026 todas as 24
-          campanhas tinham exatamente 1, e e essa premissa que permite guardar
-          item_id como coluna. Se passar de 1, o gasto deixa de ser atribuivel
-          a um SKU sem rateio arbitrario -- o teste assert_ads_campanha_um_item
-          avisa, e o modelo precisa virar tabela ponte.
+          Quantos produtos a campanha anuncia. NULO em campanha de ANUNCIO EM
+          GRUPO, pelo mesmo motivo do item_id: o setting recusa esses ids.
+          USO PRATICO: qtd_itens is null e hoje o unico marcador de campanha em
+          grupo e em 05/11/2026 devolve exatamente as 5, sem falso positivo --
+          mas o marcador vai sujar, porque campanha encerrada que sai da
+          listagem tambem perde a linha de setting. Nas campanhas que o setting
+          devolve o valor e sempre 1 desde 02/09/2026, e e essa premissa que
+          permite guardar item_id como coluna. O teste
+          assert_ads_campanha_um_item guarda a premissa, mas le so o que foi
+          coletado: por construcao ele nao enxerga campanha ausente.
 
       - name: status_campanha
-        description: "Estado atual da campanha: ongoing, closed, paused. E o estado de AGORA, nao o do dia da linha -- a Shopee nao expoe historico de configuracao."
+        description: >
+          Estado da campanha: ongoing, closed, paused. NULO em campanha de
+          ANUNCIO EM GRUPO -- o setting recusa esses ids. Consequencia pratica:
+          nessas campanhas nao da para separar queda de venda por anuncio
+          pausado de queda por ruptura, porque o status existe so na tela. Nas
+          demais, e o estado de AGORA e nao o do dia da linha: a Shopee nao
+          expoe historico de configuracao.
 
       - name: orcamento_campanha
-        description: "Orcamento configurado hoje. Mesmo aviso do status: e o valor atual, nao o vigente na data da linha."
+        description: >
+          Orcamento configurado. NULO em campanha de ANUNCIO EM GRUPO -- o
+          setting recusa esses ids. Nas demais, e o valor ATUAL e nao o vigente
+          na data da linha, mesmo aviso do status_campanha.
 
       - name: meta_roas
-        description: "Meta de ROAS quando o lance e automatico. Nulo em campanha de lance manual."
+        description: >
+          Meta de ROAS quando o lance e automatico. DUAS CAUSAS DE NULO:
+          campanha de ANUNCIO EM GRUPO, porque o setting recusa esses ids, e
+          campanha de lance manual, que nao tem meta.
 
       - name: impressoes
         description: "Quantas vezes o anuncio foi exibido."
