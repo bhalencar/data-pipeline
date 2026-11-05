@@ -35,21 +35,28 @@
 -- teste devolve ZERO linhas, e de 30/10 em diante devolve exatamente os
 -- quatro dias do defeito conhecido. Nenhum falso positivo em oito meses.
 --
--- SEVERIDADE: warn, E ISSO E TEMPORARIO
--- --------------------------------------
--- Como `error`, este teste derrubaria a rodada das 06:00 HOJE, por um defeito
--- que ja conhecemos e que esta sendo consertado em outro card. Derrubar o
--- pipeline para avisar de algo que ja esta no board nao protege ninguem --
--- so impede o resto do gold de atualizar.
+-- SEVERIDADE: error, desde 05/11/2026
+-- ------------------------------------
+-- Nasceu como `warn` em 03/11, porque na epoca ele acusava um defeito real e
+-- ja conhecido -- cinco campanhas em grupo fora da extracao -- e derrubar o
+-- gold inteiro para avisar de algo que ja estava no board nao protegeria
+-- ninguem.
 --
--- Como `warn`, a divergencia aparece na saida de toda rodada sem matar o
--- build.
+-- O conserto subiu em 04/11 e a rodada da nuvem de 05/11 confirmou:
+-- 249 dias avaliados, ZERO acima da tolerancia, maior diferenca diaria de
+-- R$ 0,02 e R$ 0,40 de diferenca absoluta somada em todo o historico.
 --
--- TROQUE PARA `error` NO MESMO COMMIT QUE CONSERTAR A EXTRACAO. Se o teste
--- ficar em warn depois disso, ele vira ruido que todo mundo aprende a pular,
--- e a proxima campanha ausente passa igual a esta.
+-- Com a casa limpa, `error` e o unico valor honesto. Em `warn` ele viraria
+-- ruido que todo mundo aprende a pular, e a proxima campanha ausente passaria
+-- exatamente como esta passou: cinco dias em silencio.
+--
+-- SE ESTE TESTE DERRUBAR A RODADA, o mais provavel NAO e defeito de codigo: e
+-- campanha nova em grupo que a listagem da Shopee nao enumera. Pegue o id na
+-- URL do Seller Centre (.../pas/product/manual-mpd/<id>) e acrescente uma
+-- linha em `extraction/shopee/campanhas_extras.csv`. Ver o cabecalho do
+-- `carregar_campanhas_extras()` em get_ads.py.
 
-{{ config(severity='warn') }}
+{{ config(severity='error') }}
 
 {% if target.type == 'bigquery' %}
 
