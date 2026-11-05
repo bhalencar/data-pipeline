@@ -117,23 +117,53 @@ where data between '2026-07-01' and '2026-07-31';
 
 ---
 
-## Campanha sem produto
+## Cinco colunas que vêm nulas — e isso não é defeito
 
-`item_id` é o que liga gasto de mídia a um SKU. Ele vem **nulo** quando a campanha não aparece mais na listagem da Shopee.
+Em **anúncio em grupo** (campanha com vários produtos), cinco colunas vêm sempre nulas:
 
-Campanha encerrada some, e o gasto histórico dela continua na tabela sem produto associado. **Nulo aqui é esperado, não defeito** — a alternativa seria perder a linha de gasto, o que é pior.
+`item_id` · `qtd_itens` · `status_campanha` · `orcamento_campanha` · `meta_roas`
+
+Medido em 05/11/2026: 150 de 150 linhas das cinco campanhas em grupo. Nas 25 individuais, 6.021 linhas, nenhum nulo.
+
+**Por que todas juntas.** As cinco vêm do mesmo lugar — a configuração da campanha — e a Shopee recusa esses ids ali, com a mensagem *"auto & manual product ad types only"*. Sem linha de configuração, as cinco colunas ficam vazias de uma vez.
+
+**O que nunca é nulo:** `gasto` e `nome_anuncio`. O que importa para o dinheiro está sempre lá.
+
+A segunda causa possível de `item_id` nulo é campanha encerrada, que some da listagem e deixa o gasto histórico sem produto. Hoje esse caso não ocorre — todos os nulos são de anúncio em grupo.
+
+**Consequência que incomoda:** com `status_campanha` nulo, nessas campanhas não dá para distinguir queda de venda por anúncio pausado de queda por ruptura. O status existe só na tela do Seller Centre.
 
 ---
 
-## Uma premissa que pode expirar
+## Como identificar uma campanha
 
-Hoje cada campanha anuncia **um produto só**. Foram 24 campanhas verificadas em 02/09/2026, todas com um item.
+**Para precisão, use `campaign_id`.** É o único campo estável.
 
-É isso que permite guardar `item_id` como uma coluna simples e dizer "esta campanha é do produto X".
+**Para ler, extraia o colchete do `nome_anuncio`:**
 
-Se a loja passar a criar campanha com vários produtos, o gasto deixa de ser atribuível a um SKU sem rateio arbitrário — e rateio arbitrário produz número que parece exato e não é. O teste `assert_ads_campanha_um_item` avisa quando isso acontecer, e nesse dia o modelo precisa mudar de formato.
+```sql
+regexp_extract(nome_anuncio, r'\[([^\]]+)\]$') as campanha
+```
 
-**Se esse teste falhar, não aumente o limite.** Ele está fazendo o trabalho dele.
+O formato do campo é `<título de um produto> [rótulo]`. Em campanha em grupo o colchete traz o nome que o vendedor deu — `[Lançamentos 2]`. Em campanha individual traz um número de desambiguação — `[2]`, `[4]` — ou não existe.
+
+⚠️ **O título antes do colchete engana numa campanha em grupo.** Ele nomeia **um** item do grupo, escolhido pela Shopee, sem relação com o gasto. A campanha "Lançamentos 2" aparece rotulada com o *Suporte para Doces*, que gastou R$ 0,85 dos R$ 18,87 da campanha — sexto de sete produtos. Ler a linha como gasto daquele produto erra por vinte vezes.
+
+⚠️ **E o campo muda sozinho.** Ele vem da performance e reflete o título vigente no momento da consulta. Reescrever o anúncio renomeia a campanha inclusive no histórico: seis das vinte e cinco campanhas antigas já aparecem na tabela com dois nomes diferentes. Nunca filtre por `nome_anuncio` com `LIKE` no título.
+
+**Para separar os dois mundos, use `qtd_itens is null`** — hoje devolve exatamente as campanhas em grupo, sem falso positivo. Mas o marcador vai sujar: campanha encerrada que sai da listagem também perde a configuração e cai no mesmo filtro.
+
+---
+
+## A premissa que expirou
+
+Até outubro de 2026 cada campanha anunciava **um produto só** — 24 campanhas verificadas em 02/09, todas com um item. É isso que permite guardar `item_id` como coluna simples e dizer "esta campanha é do produto X".
+
+**Isso deixou de ser verdade em 30/10/2026**, quando a loja passou a criar anúncio em grupo. Para essas campanhas o gasto não é atribuível a um SKU, e a tabela não tenta: deixa `item_id` nulo em vez de ratear. Rateio arbitrário produz número que parece exato e não é.
+
+**O teste `assert_ads_campanha_um_item` continua valendo, mas não cobre esse caso** — e vale entender por quê. Ele lê da configuração, que só contém as campanhas que a Shopee devolve na listagem. Por construção, um teste que lê só o que foi coletado não detecta o que não foi. Quem pega campanha ausente é o `assert_ads_conciliacao_loja_campanha`, que compara contra o nível loja.
+
+**Se o teste do um-item falhar, não aumente o limite.** Ele passou a guardar uma premissa menor — "entre as campanhas que a listagem devolve, cada uma tem um item" — e continua fazendo o trabalho dele.
 
 ---
 
@@ -141,7 +171,7 @@ Se a loja passar a criar campanha com vários produtos, o gasto deixa de ser atr
 
 **De onde veio a visita.** Atribuição de origem de tráfego por pedido não existe na API pública da Shopee — confirmado pelo suporte. Não é lacuna a preencher, é teto da plataforma.
 
-**Quanto custou cada produto dentro de uma campanha com vários.** Enquanto cada campanha tiver um produto a pergunta não existe; quando passar a ter, a resposta honesta é "a Shopee não reparte".
+**Quanto custou cada produto dentro de uma campanha em grupo.** A tela "Desempenho do Produto" do Seller Centre mostra essa quebra; a API não devolve. Testado em 04 e 05/11/2026: o endpoint de performance entrega só o total da campanha, o de configuração recusa esses ids, a família GMS não conhece as campanhas, e a varredura dos 25 endpoints do módulo Ads não achou outro caminho. **É teto da plataforma, não lacuna a preencher.** Para decidir qual anúncio pausar dentro de uma campanha, a tela é a fonte.
 
 **Histórico de configuração.** `status_campanha`, `orcamento_campanha` e `meta_roas` são o estado de **agora**, não o do dia da linha. Se o orçamento mudou em julho, isso não está aqui e não há como recuperar.
 
