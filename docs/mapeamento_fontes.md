@@ -68,16 +68,39 @@ O custo de cada item é o **mais recente vigente na data do pedido** (não o cus
 via `row_number()` sobre custos com `data_vigencia_inicio <= create_time`, mantendo só `rn = 1`.
 Isso garante que pedidos antigos sempre usem o custo que valia na época.
 
-## Fonte de custo (planilha manual)
+## Fonte de custo (`config.custo_produtos`)
 
-`extraction/planilhas/custo_produtos.xlsx` — mantida manualmente, com histórico append-only
-(nunca editar linha antiga; sempre adicionar linha nova com nova `data_vigencia_inicio`).
+`cp-pipeline-503623.config.custo_produtos` — tabela lida em tempo de execução pelo
+`master_orders`. Histórico append-only: **nunca editar linha antiga**; custo que mudou entra
+como linha nova com `data_vigencia_inicio` nova, porque o modelo escolhe a vigência mais
+recente anterior à data do pedido e reescrever linha velha reescreveria margem de pedido já
+fechado.
 
-Workflow de atualização:
-1. Editar a planilha
-2. `python3.12 extraction/planilhas/export_custo_csv.py`
-3. `dbt seed`
-4. `dbt run --select master_orders`
+Workflow de atualização — um passo, sem deploy:
+
+```sql
+insert into `cp-pipeline-503623.config.custo_produtos`
+  (sku, nome_produto, custo_unitario, data_vigencia_inicio, observacao, origem, alterado_em)
+values ('SKU-01', 'Nome do produto', 12.34, date '2026-11-01',
+        'de onde veio o custo', 'manual', current_timestamp());
+```
+
+A linha vale na rodada seguinte. Para valer **agora**, `dbt run --select master_orders`.
+
+### O que era antes, e por que mudou (14/11/2026)
+
+Era o seed `dbt/seeds/custo_produtos.csv`, gerado de `custo_produtos.xlsx` pelo
+`export_custo_csv.py`. Seed viaja dentro da imagem do Cloud Run, então cadastrar produto
+exigia commit, `builds submit` e `run jobs update`. Em 11/11/2026 quatro presépios de Natal
+começaram a vender, o cadastro ficou sem deploy, e o teste `not_null` do `cmv_unitario`
+derrubou o build por três dias.
+
+O `export_custo_csv.py` está **desativado** — a xlsx local parou em 01/08/2026 e rodá-lo
+sobrescreveria o seed inteiro, apagando em silêncio tudo que entrou desde agosto. A planilha
+de precificação continua sendo de onde saem os custos novos; o que morreu foi o caminho
+automático planilha → seed.
+
+A mesma mudança valeu para `config.campanhas_extras`, lida pelo `get_ads.py`.
 
 ## Limitações conhecidas
 

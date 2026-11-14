@@ -100,7 +100,7 @@ models:
         description: "Preco de venda DA LINHA INTEIRA (preco x quantidade), vindo do relatorio financeiro da Shopee."
 
       - name: cmv_unitario
-        description: "Custo de uma unidade do produto, da planilha de custos. Nulo em pedidos anteriores a 2026-06-01 (produtos descontinuados) - isso e proposital."
+        description: "Custo de uma unidade do produto, de config.custo_produtos (vigencia mais recente anterior a data do pedido). Nulo em pedidos anteriores a 2026-06-01 (produtos descontinuados) - isso e proposital."
         data_tests:
           - not_null:
               config:

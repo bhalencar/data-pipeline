@@ -44,7 +44,6 @@ de atribuicao depois do fato, porque `broad_*` credita conversao numa janela
 de 7 dias a partir do clique.
 """
 
-import csv
 import hashlib
 import hmac
 import json
@@ -63,6 +62,11 @@ load_dotenv()
 PARTNER_ID = int(os.getenv("SHOPEE_PARTNER_ID", "").strip())
 PARTNER_KEY = os.getenv("SHOPEE_PARTNER_KEY", "").strip()
 API_HOST = "https://partner.shopeemobile.com"
+
+# Projeto do warehouse. A lista de campanhas extras mora no BigQuery
+# desde 14/11/2026 -- antes era um CSV que viajava dentro da imagem.
+BQ_PROJECT = "cp-pipeline-503623"
+BQ_LOCATION = "southamerica-east1"
 
 FMT_ADS = "%d-%m-%Y"
 MAX_DIAS_ADS = 30          # medido: 31 dias falha
@@ -221,7 +225,7 @@ def get_campaign_ids() -> list:
 
 def carregar_campanhas_extras(ja_listadas: list) -> list:
     """
-    Campanhas que a listagem da Shopee NAO devolve, cadastradas a mao.
+    Campanhas que a listagem da Shopee NAO devolve, lidas de config.campanhas_extras.
 
     POR QUE ISTO EXISTE. Em 30/10/2026 a loja passou a gastar numa campanha
     que o `get_product_level_campaign_id_list` nao enumera: ele aceita apenas
@@ -242,45 +246,78 @@ def carregar_campanhas_extras(ja_listadas: list) -> list:
     da Shopee, nao nossa, e e por isso que a lista extra entra SO na chamada de
     performance -- ver o bloco principal.
 
-    COMO CADASTRAR UMA NOVA. Abra a campanha no Seller Centre e pegue o id da
-    URL (.../pas/product/manual-mpd/<id>). Acrescente uma linha no
-    `campanhas_extras.csv`. Quem avisa que falta cadastrar e o teste dbt
-    `assert_ads_conciliacao_loja_campanha`, que compara o nivel loja com a soma
-    das campanhas.
+    POR QUE SAIU DO CSV, em 14/11/2026. O arquivo viajava dentro da imagem do
+    Cloud Run: cadastrar campanha exigia commit, `builds submit` e
+    `run jobs update`. Em 11/11 a campanha "Lancamento Natal" foi criada, o
+    deploy nao aconteceu, e a rodada ficou tres dias atribuindo R$ 84,55 a
+    nenhuma campanha. Agora a lista mora no BigQuery e e lida a cada rodada:
+    o `insert` vale na manha seguinte, sem deploy nenhum.
 
-    Falha de leitura aqui NAO derruba a extracao: sem o arquivo seguimos com a
-    lista da API, que e o comportamento de antes. Perder a campanha extra e
-    ruim; perder a rodada inteira por causa de um CSV e pior.
+    COMO CADASTRAR UMA NOVA. Abra a campanha no Seller Centre, pegue o id da
+    URL (.../pas/product/manual-mpd/<id>) e rode:
+
+        insert into `cp-pipeline-503623.config.campanhas_extras`
+          (campaign_id, rotulo, descoberta_em, observacao, alterado_em)
+        values (999999, 'Apelido', current_date('America/Sao_Paulo'),
+                'como foi descoberta', current_timestamp());
+
+    Quem avisa que falta cadastrar e o teste dbt
+    `assert_ads_conciliacao_loja_campanha`, que compara o nivel loja com a soma
+    das campanhas, e a tarefa diaria de deteccao.
+
+    FALHA DE LEITURA NAO DERRUBA A EXTRACAO, e isso e decisao, nao descuido:
+    sem a tabela seguimos com a lista da API, que e o comportamento de antes.
+    Perder a campanha extra e ruim; perder a rodada inteira e pior -- e quem
+    cobra o resultado e a conciliacao, que grita em voz alta no [3/3] abaixo e
+    derruba o `dbt build` depois. O silencio nao escapa.
     """
-    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           "campanhas_extras.csv")
     extras = []
 
     try:
-        with open(caminho, encoding="utf-8", newline="") as f:
-            for linha in csv.DictReader(f):
-                bruto = (linha.get("campaign_id") or "").strip()
-                if not bruto:
-                    continue
-                try:
-                    cid = int(bruto)
-                except ValueError:
-                    print(f"  AVISO: campaign_id invalido no CSV: {bruto!r}")
-                    continue
-                if cid in ja_listadas:
-                    # A Shopee passou a enumerar sozinha. Nao e erro -- e a
-                    # deixa para tirar a linha do CSV.
-                    print(f"  {cid} ja vem na listagem da API; linha do CSV "
-                          f"virou redundante.")
-                    continue
-                extras.append(cid)
-    except FileNotFoundError:
-        print("  campanhas_extras.csv nao encontrado; seguindo so com a API.")
-        return []
+        # Import tardio de proposito: se o ambiente estiver sem
+        # google-cloud-bigquery, a extracao de Ads continua funcionando.
+        from pathlib import Path
+
+        from google.cloud import bigquery
+        from google.oauth2 import service_account
+
+        # Mesmo padrao do load_ads_to_bigquery.py: chave local se existir,
+        # senao a service account do proprio job no Cloud Run.
+        keyfile = Path.home() / ".gcp-keys" / "dbt-bigquery-sa-key.json"
+        if keyfile.exists():
+            creds = service_account.Credentials.from_service_account_file(str(keyfile))
+            client = bigquery.Client(project=BQ_PROJECT, credentials=creds,
+                                     location=BQ_LOCATION)
+        else:
+            client = bigquery.Client(project=BQ_PROJECT, location=BQ_LOCATION)
+
+        sql = f"""
+            select campaign_id, rotulo
+            from `{BQ_PROJECT}.config.campanhas_extras`
+            order by campaign_id
+        """
+        linhas = list(client.query(sql).result())
+
     except Exception as e:                      # noqa: BLE001
-        print(f"  AVISO: falha ao ler campanhas_extras.csv ({e}); "
-              f"seguindo so com a API.")
+        print(f"  AVISO: falha ao ler config.campanhas_extras ({e});")
+        print("  seguindo so com a lista da API. A conciliacao em [3/3] vai")
+        print("  acusar a diferenca se alguma campanha ficar de fora.")
         return []
+
+    for linha in linhas:
+        try:
+            cid = int(linha["campaign_id"])
+        except (TypeError, ValueError):
+            print(f"  AVISO: campaign_id invalido na tabela: "
+                  f"{linha['campaign_id']!r}")
+            continue
+        if cid in ja_listadas:
+            # A Shopee passou a enumerar sozinha. Nao e erro -- e a deixa para
+            # apagar a linha da tabela.
+            print(f"  {cid} ja vem na listagem da API; linha da tabela "
+                  f"virou redundante.")
+            continue
+        extras.append(cid)
 
     return extras
 
@@ -393,7 +430,7 @@ if __name__ == "__main__":
 
     ids_extras = carregar_campanhas_extras(ids_listados)
     if ids_extras:
-        print(f"  {len(ids_extras)} campanha(s) extra(s) do campanhas_extras.csv: "
+        print(f"  {len(ids_extras)} campanha(s) extra(s) de config.campanhas_extras: "
               f"{', '.join(str(i) for i in ids_extras)}")
 
     # DUAS LISTAS, DE PROPOSITO, E A DIFERENCA NAO E COSMETICA.
@@ -440,7 +477,8 @@ if __name__ == "__main__":
     if abs(diferenca) > 1.00:
         print("  ATENCAO: diferenca acima de R$ 1,00. Provavel campanha que a "
               "listagem nao devolve.\n  Pegue o id na URL do Seller Centre e "
-              "cadastre em extraction/shopee/campanhas_extras.csv.")
+              "rode o insert em config.campanhas_extras\n  (ver o docstring de "
+              "carregar_campanhas_extras). Nao precisa de deploy.")
     print(f"  Dias com gasto zero: {sum(1 for d in shop if not d.get('expense'))} de {len(shop)}")
     print("\n  Dia zerado e normal com a midia pausada -- a Shopee devolve a linha "
           "mesmo assim.\n  Dia AUSENTE, nao. Se o total de dias for menor que o "

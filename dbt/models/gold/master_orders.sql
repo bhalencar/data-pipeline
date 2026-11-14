@@ -36,26 +36,22 @@ escrow as (
 
 costs as (
 
-{% if target.type == 'bigquery' %}
-
-    -- No BigQuery o seed ja chega com custo_unitario FLOAT64 e
-    -- data_vigencia_inicio DATE, mas o cast para numeric mantem a
-    -- precisao decimal igual a do Postgres nos calculos de margem.
+    -- DE ONDE VEM O CUSTO, e por que mudou em 14/11/2026.
+    --
+    -- Era o seed `dbt/seeds/custo_produtos.csv`, que viaja dentro da imagem.
+    -- Consequencia: cadastrar produto novo exigia commit e deploy, e quando
+    -- esse passo foi esquecido o pipeline ficou tres dias quebrado -- os
+    -- presepios de Natal venderam a partir de 11/11 sem custo na base, e o
+    -- teste not_null do cmv_unitario derrubou o build todo dia.
+    --
+    -- Agora e `config.custo_produtos`, lida em tempo de execucao. Linha nova
+    -- vale na rodada seguinte, sem deploy. O cast para numeric continua aqui
+    -- por disciplina, mesmo com a coluna ja sendo NUMERIC na origem.
     select
         sku,
         cast(custo_unitario as numeric) as custo_unitario,
         data_vigencia_inicio
-    from {{ ref('custo_produtos') }}
-
-{% else %}
-
-    select
-        sku,
-        custo_unitario::numeric as custo_unitario,
-        data_vigencia_inicio::date as data_vigencia_inicio
-    from {{ ref('custo_produtos') }}
-
-{% endif %}
+    from {{ source('config', 'custo_produtos') }}
 
 ),
 

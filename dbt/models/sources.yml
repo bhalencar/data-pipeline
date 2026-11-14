@@ -11,3 +11,24 @@ sources:
       - name: get_ads_campaign_daily
       - name: get_ads_campaign_setting
       - name: get_keywords
+
+  # Tabelas de parametro mantidas pelo Pedro, fora da imagem de proposito.
+  #
+  # POR QUE NAO SAO MAIS SEED. Seed viaja dentro do container, entao cadastrar
+  # um produto ou uma campanha exigia commit e deploy -- e em 11/11/2026 o
+  # pipeline ficou tres dias quebrado porque esse passo foi esquecido. Como
+  # source, a tabela e lida em tempo de execucao: a linha nova vale na rodada
+  # seguinte, sem deploy.
+  #
+  # O QUE SE PERDEU: o historico do git. Em troca, cada linha carrega
+  # `alterado_em` e `origem`, e toda escrita fica no log de execucao.
+  - name: config
+    schema: config
+    description: >
+      Parametros operacionais lidos em tempo de execucao. Escrita somente pelo
+      Pedro; o pipeline so le.
+    tables:
+      - name: custo_produtos
+        description: "Custo por SKU com vigencia. Alimenta o cmv_unitario do master_orders."
+      - name: campanhas_extras
+        description: "Campanhas de anuncio em grupo que a listagem da Shopee nao enumera. Lida pelo get_ads.py, nao pelo dbt."
